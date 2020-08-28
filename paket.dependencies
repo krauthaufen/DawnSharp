@@ -1,0 +1,13 @@
+source https://api.nuget.org/v3/index.json
+framework: netstandard2.0, netcoreapp3.1
+
+nuget FSharp.Core                           >= 4.6.2 lowest_matching: true
+nuget Newtonsoft.JSON                       >= 12.0.3
+
+
+group Build
+source https://api.nuget.org/v3/index.json
+framework: netstandard2.0
+github aardvark-platform/aardvark.fake:v51
+nuget Fake.DotNet.Cli
+nuget Fake.DotNet.MSBuild
