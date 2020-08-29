@@ -190,6 +190,14 @@ module Entry =
         | _ ->
             None
 
+type TypeMode =
+    | Extern
+    | Internal
+    | Default
+
+let indent (str : string) =
+    str.Split([|"\r\n"|], StringSplitOptions.None) |> Array.map (sprintf "    %s") |> String.concat "\r\n"
+
 let run() = 
     if not (Directory.Exists dawnDir) then failwith "please run build-script"
     let text = File.ReadAllText (Path.Combine(dawnDir, "dawn.json"))
@@ -198,7 +206,7 @@ let run() =
 
     let all = root.Properties() |> Seq.choose Entry.tryParse |> Seq.map (fun e -> e.Name, e) |> Map.ofSeq
 
-
+    
     let cleanName (name : string) =
         let c0 = name.[0] 
         let name =
@@ -208,13 +216,13 @@ let run() =
         name.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
         |> Seq.map (fun str ->
             if str.Length > 0 then 
-                str.Substring(0, 1).ToUpper() + str.Substring(1).ToLower()
+                str.Substring(0, 1).ToUpper() + str.Substring(1)
             else
                 str
         )
         |> String.concat ""
 
-    let typeName (name : string) (ann : option<string>) =
+    let typeName (mode : TypeMode) (name : string) (ann : option<string>) =
         match Map.tryFind name all with
         | Some def ->
             let ann = ann |> Option.map (fun s -> s.Replace("const", "").Trim())
@@ -226,7 +234,11 @@ let run() =
                 | None -> false
 
             let wrap =
-                if ptr then sprintf "nativeptr<%s>"
+                if ptr then 
+                    match mode with
+                    | Extern -> sprintf "%s*"
+                    | Internal -> sprintf "nativeptr<%s>"
+                    | Default -> sprintf "%s[]"
                 else id
 
             match def with
@@ -235,7 +247,10 @@ let run() =
             | Native "uint64_t" -> wrap "uint64"
             | Native "bool" -> wrap "int"
             | Native "float" -> wrap "float32"
-            | Native "char" -> wrap "char"
+            | Native "char" -> 
+                match mode with
+                | Default when ptr -> "string"
+                | _ -> wrap "char"
             | Native "size_t" -> wrap "unativeint"
             | Native "void" -> 
                 if ptr then "nativeint"
@@ -245,6 +260,22 @@ let run() =
             | Native o ->   
                 failwithf "bad native type: %A" o
                 
+            | Object(name,_) ->
+                match mode with
+                | Internal | Extern ->
+                    let name = cleanName name + "Handle"
+                    wrap name
+                | _ ->
+                    if ptr then sprintf "%s[]" (cleanName name)
+                    else cleanName name |> wrap
+            | Struct(name, _, _) ->
+                match mode with
+                | Internal | Extern ->
+                    let name = "WGPU" + cleanName name
+                    wrap name
+                | _ ->
+                    if ptr then sprintf "%s[]" (cleanName name)
+                    else cleanName name |> wrap
             | _ -> 
                 cleanName def.Name |> wrap
        
@@ -253,7 +284,15 @@ let run() =
             cleanName name
 
 
-    //let printfn fmt = Printf.kprintf ignore fmt
+    let b = System.Text.StringBuilder()
+    let printfn fmt = Printf.kprintf (fun str -> b.AppendLine str |> ignore) fmt
+
+    printfn "namespace rec WebGPU"
+    printfn "open System"
+    printfn ""
+    printfn "#nowarn \"49\""
+    printfn "#nowarn \"9\""
+    printfn ""
     for (_, e) in Map.toSeq all do
         match e with
         | Enum(name, flags, values) ->
@@ -263,30 +302,260 @@ let run() =
                 printfn "    | %s = %d" (cleanName name) value
 
         | Struct(name, extensible, fields) ->
-            printfn "[<Struct>]"
-            printfn "type %s =" (cleanName name)
-            printfn "    {"
+            printfn "type WGPU%s =" (cleanName name)
+            printfn "    struct"
             if extensible then
-                printfn "        pNext : nativeint"
+                printfn "        val mutable public pNext : nativeint"
             for p in fields do
-                printfn "        %s : %s" (cleanName p.name) (typeName p.typ p.annotation)
+                printfn "        val mutable public %s : %s" (cleanName p.name) (typeName Internal p.typ p.annotation)
                 
-            printfn "    }"
+            printfn "    end"
 
+
+            match fields with
+            | [] ->
+                printfn "type %s private () =" (cleanName name)
+                printfn "    static let instance = %s()" (cleanName name)
+                printfn "    static member Instance = instance"
+
+            | _ -> 
+                printfn "[<Struct>]"
+                printfn "type %s =" (cleanName name)
+                printfn "    {"
+                //if extensible then
+                //    printfn "        Next : nativeint"
+                for p in fields do
+                    printfn "        %s : %s" (cleanName p.name) (typeName Default p.typ p.annotation)
+                printfn "    }"
+            printfn "    member inline x.Pin<'a>(action : WGPU%s -> 'a) : 'a =" (cleanName name)
+            printfn "        let x = x"
+            printfn "        let mutable native = Unchecked.defaultof<WGPU%s>" (cleanName name)
+            //if extensible then
+            //    printfn "        native.pNext <- x.Next"
+
+            let mutable body = "action native"
+
+            for f in List.rev fields do
+                let ptr = f.annotation |> Option.isSome
+                match all.[f.typ] with
+                | Struct _ as typ ->
+                    if ptr then
+                        body <-
+                            String.concat "\r\n" [
+                                sprintf "let rec pin%s (a : array<%s>) (p : array<_>) (i : int) ="  (cleanName f.name) (typeName Default f.typ None)
+                                sprintf "    if i >= a.Length then"
+                                sprintf "        use p = fixed p"
+                                sprintf "        native.%s <- p"  (cleanName f.name)
+                                sprintf "%s" (indent (indent body))
+                                sprintf "    else"
+                                sprintf "        a.[i].Pin(fun ai -> p.[i] <- ai; pin%s a p (i+1))"(cleanName f.name)
+                                sprintf "pin%s x.%s (Array.zeroCreate x.%s.Length) 0" (cleanName f.name) (cleanName f.name) (cleanName f.name)
+                            ]
+                    else
+                        body <-
+                            String.concat "\r\n" [
+                                sprintf "x.%s.Pin(fun _%s ->" (cleanName f.name) (cleanName f.name) 
+                                sprintf "    native.%s <- _%s" (cleanName f.name) (cleanName f.name) 
+                                indent body
+                                sprintf ")"
+                            ]
+                    
+                | Object _ ->
+                    if ptr then
+                        body <-
+                            String.concat "\r\n" [
+                                sprintf "let _%s = x.%s |> Array.map (fun a -> a.Handle)" (cleanName f.name) (cleanName f.name)
+                                sprintf "use _%s = fixed _%s" (cleanName f.name) (cleanName f.name)
+                                sprintf "native.%s <- _%s" (cleanName f.name) (cleanName f.name) 
+                                body
+                            ]
+                    else
+                        body <-
+                            String.concat "\r\n" [
+                                sprintf "native.%s <- x.%s.Handle" (cleanName f.name) (cleanName f.name) 
+                                body
+                            ]
+                
+                | Native "char" when ptr ->
+                    body <-
+                        String.concat "\r\n" [
+                            sprintf "let p%s = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.%s" (cleanName f.name) (cleanName f.name)
+                            sprintf "try"
+                            sprintf "    native.%s <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt p%s" (cleanName f.name) (cleanName f.name)
+                            indent body
+                            sprintf "finally"
+                            sprintf "    System.Runtime.InteropServices.Marshal.FreeHGlobal p%s" (cleanName f.name)
+                        ]
+
+                | t ->
+                    if ptr then
+                        match typeName Default f.typ None with
+                        | "unit" ->
+                        
+                            body <- 
+                                String.concat "\r\n" [
+                                    sprintf "native.%s <- x.%s" (cleanName f.name) (cleanName f.name) 
+                                    body
+                                ]
+                        | _ -> 
+                            body <- 
+                                String.concat "\r\n" [
+                                    sprintf "use _%s = fixed x.%s" (cleanName f.name) (cleanName f.name) 
+                                    sprintf "native.%s <- _%s" (cleanName f.name) (cleanName f.name) 
+                                    body
+                                ]
+
+                    else 
+                        body <- 
+                            String.concat "\r\n" [
+                                sprintf "native.%s <- x.%s" (cleanName f.name) (cleanName f.name) 
+                                body
+                            ]
+
+            printfn "%s" (indent (indent body))
+
+        | Callback(name, args) ->
+            let args = 
+                match args with
+                | [] -> "unit"
+                | _ -> args |> List.map (fun a -> typeName Internal a.typ a.annotation) |> String.concat " * "
+            printfn "type %s = delegate of %s -> unit" (cleanName name) args
+        | Object _ ->
+            ()
+        | Native _ ->
+            ()
+
+    printfn "module DawnRaw ="
+    printfn "    open System.Runtime.InteropServices"
+    printfn "    open System.Security"
+    printfn ""
+    for (_, e) in Map.toSeq all do
+        match e with
         | Object(name, methods) ->
-            printfn "type %sHandle = struct val mutable private Handle : nativeint end" (cleanName name)
+            for m in methods do
+                let fullName = "wgpu" + cleanName (name + " " + m.name)
+                let ret = m.ret |> Option.map (fun t -> typeName Extern t None) |> Option.defaultValue "void"
+                let args = ({ name = "self"; typ = name; annotation = None } :: m.args) |> Seq.map (fun a -> sprintf "%s %s" (typeName Extern a.typ a.annotation) (cleanName a.name)) |> String.concat ", "
+                printfn "    [<DllImport(\"dawn\"); SuppressUnmanagedCodeSecurity>]"
+                printfn "    extern %s %s(%s)" ret fullName args
 
+
+        | _ ->
+            ()
+
+
+    //let printfn fmt = Printf.kprintf ignore fmt
+    for (_, e) in Map.toSeq all do
+        match e with
+        | Object(name, methods) ->
+            ()
+            printfn "type %sHandle = struct val mutable private Handle : nativeint end" (cleanName name)
+            
+            printfn "[<Struct>]"
             printfn "type %s(handle : %sHandle) =" (cleanName name) (cleanName name)
 
+            printfn "    member x.Handle : %sHandle = handle" (cleanName name)
             for meth in methods do
-                let args = meth.args |> List.map (fun a -> sprintf "%s: %s" (cleanName a.name) (typeName a.typ a.annotation)) |> String.concat ", "
-                printfn "    member x.%s(%s) : %s =" (cleanName meth.name) args (match meth.ret with | Some ret -> typeName ret None | None -> "unit")
-                printfn "        failwith \"\""
+
+                
+
+                let args = 
+                    meth.args |> List.map (fun a -> 
+                        match Map.tryFind a.typ all with
+                        | Some typ ->
+                            let ptr = Option.isSome a.annotation 
+                            let argName = cleanName a.name
+                            match typ with
+                            | Object(objName, _) ->
+                                let objName = cleanName objName
+
+                                if ptr then
+                                    sprintf "%s : %s[]" argName objName, sprintf "_%s" argName, fun str -> [
+                                        sprintf "let _%s = %s |> Array.map (fun s -> s.Handle)" argName argName
+                                        sprintf "use _%s = fixed _%s" argName argName
+                                        str
+                                    ]
+                                else
+                                    sprintf "%s : %s" argName objName, sprintf "%s.Handle" argName, fun str -> [str]
+                            
+                            | Struct(objName, _, _) ->
+                                let objName = cleanName objName
+                                if argName.EndsWith "Descriptor" then
+                                    sprintf "%s : %s" argName objName, sprintf "_%s" argName, fun str -> [
+                                        sprintf "%s.Pin(fun _%s ->" argName argName 
+                                        sprintf "    use _%s = fixed [| _%s |]" argName argName
+                                        indent str
+                                        sprintf ")"
+                                    ]
+                                elif ptr then
+                                    sprintf "%s : %s[]" argName objName, sprintf "_%s" argName, fun str -> [
+                                        
+                                        sprintf "let rec pin%s (a : array<%s>) (p : array<_>) (i : int) ="  (cleanName argName) (typeName Default a.typ None)
+                                        sprintf "    if i >= a.Length then"
+                                        sprintf "        use _%s = fixed p" (cleanName argName)
+                                        sprintf "%s" (indent (indent str))
+                                        sprintf "    else"
+                                        sprintf "        a.[i].Pin(fun ai -> p.[i] <- ai; pin%s a p (i+1))"(cleanName argName)
+                                        sprintf "pin%s %s (Array.zeroCreate %s.Length) 0" (cleanName argName) (cleanName argName) (cleanName argName)
+                                    ]
+                                else
+                                    sprintf "%s : %s" argName objName, sprintf "%s.ToNative()" argName, fun str -> [str]
+                                
+
+                            | _ ->
+                              
+                                let typName = typeName Default typ.Name None
+                                
+                                if ptr then 
+                                    if typName = "unit" then 
+                                        sprintf "%s : nativeint" argName, argName, fun str -> [str]
+                                    elif argName.EndsWith "Descriptor" then
+                                        sprintf "%s : %s" argName typName, sprintf "_%s" argName, fun str ->[
+                                            sprintf "use _%s = fixed [| %s |]" argName argName
+                                            str
+                                        ]
+                                    else
+                                        sprintf "%s : %s[]" argName typName, sprintf "_%s" argName, fun str -> [
+                                            sprintf "use _%s = fixed %s" argName argName
+                                            str
+                                        ]
+                                else
+                                    argName, argName, fun str -> [str]
+                        | None ->
+                            failwith "bad type"
+                    )
+
+                let argDecl = args |> List.map(fun (a,_,_) -> a) |> String.concat ", "
+                let argUse = args |> List.map (fun (_,a,_) -> a) |> List.append ["handle"] |> String.concat ", "
+
+
+                let wrap, ret =
+                    let ret =  meth.ret |> Option.bind (fun r -> Map.tryFind r all)
+                    match ret with
+                    | Some (Object(name,_)) ->
+                        let n = typeName Default name None
+                        sprintf "%s(%s)" n, n
+                    | Some o ->
+                        let n = typeName Default o.Name None
+                        id, n
+                    | None ->
+                        id, "unit"
+                        
+                let fullName = "DawnRaw.wgpu" + cleanName (name + " " + meth.name)
+
+                let mutable body = wrap (sprintf "%s(%s)" fullName argUse)
+
+                for (_,_,a) in args do
+                    body <- a body |> String.concat "\r\n"
+
+                printfn "    member x.%s(%s) : %s =" (cleanName meth.name) argDecl ret
+                printfn "        let handle = handle"
+                printfn "%s" (indent (indent body))
                 
                 ()
 
         | _ ->
             ()
-    //for a in all do
-    //    printfn "%A" a
-    printfn "%A" all.Count
+    
+    let output = Path.Combine(__SOURCE_DIRECTORY__, "WebGPU.fs")
+    File.WriteAllText(output, b.ToString())
