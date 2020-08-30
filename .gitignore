@@ -13,3 +13,6 @@ bin/Debug
 /.paket
 /Aardvark.log
 /dawn
+x64/
+/src/DawnNative/*.user
+/src/DawnNative/Release/

@@ -250,7 +250,7 @@ let run() =
             | Native "char" -> 
                 match mode with
                 | Default when ptr -> "string"
-                | _ -> wrap "char"
+                | _ -> wrap "byte"
             | Native "size_t" -> wrap "unativeint"
             | Native "void" -> 
                 if ptr then "nativeint"
@@ -260,6 +260,9 @@ let run() =
             | Native o ->   
                 failwithf "bad native type: %A" o
                 
+            | Callback _ when mode = Internal || mode = Extern ->
+                "nativeint" |> wrap
+
             | Object(name,_) ->
                 match mode with
                 | Internal | Extern ->
@@ -327,7 +330,7 @@ let run() =
                 for p in fields do
                     printfn "        %s : %s" (cleanName p.name) (typeName Default p.typ p.annotation)
                 printfn "    }"
-            printfn "    member inline x.Pin<'a>(action : WGPU%s -> 'a) : 'a =" (cleanName name)
+            printfn "    member x.Pin<'a>(action : WGPU%s -> 'a) : 'a =" (cleanName name)
             printfn "        let x = x"
             printfn "        let mutable native = Unchecked.defaultof<WGPU%s>" (cleanName name)
             //if extensible then
@@ -449,7 +452,7 @@ let run() =
         match e with
         | Object(name, methods) ->
             ()
-            printfn "type %sHandle = struct val mutable private Handle : nativeint end" (cleanName name)
+            printfn "type %sHandle = struct val mutable public Handle : nativeint end" (cleanName name)
             
             printfn "[<Struct>]"
             printfn "type %s(handle : %sHandle) =" (cleanName name) (cleanName name)
@@ -457,8 +460,8 @@ let run() =
             printfn "    member x.Handle : %sHandle = handle" (cleanName name)
             for meth in methods do
 
-                
-
+                let clean = cleanName meth.name
+                let mutable isCallback = false
                 let args = 
                     meth.args |> List.map (fun a -> 
                         match Map.tryFind a.typ all with
@@ -466,6 +469,27 @@ let run() =
                             let ptr = Option.isSome a.annotation 
                             let argName = cleanName a.name
                             match typ with
+                            | Callback(objName,args) ->
+                                let objName = cleanName objName
+                                let argDef = args |> List.map (fun a -> cleanName a.name) |> String.concat " "
+                                let argUse = args |> List.map (fun a -> cleanName a.name) |> String.concat ", "
+                                if clean.EndsWith "Callback" then
+                                    isCallback <- true
+                                    sprintf "%s : %s" argName objName, sprintf "System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate %s" argName, fun str -> [
+                                        yield sprintf "let _%sGC = System.Runtime.InteropServices.GCHandle.Alloc(%s)" argName argName
+                                        yield str
+                                        yield sprintf "{ new System.IDisposable with member x.Dispose() = _%sGC.Free() }" argName
+                                    ]
+                                else
+                                
+                                    sprintf "%s : %s" argName objName, sprintf "System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate _%s" argName, fun str -> [
+                                        yield sprintf "let mutable _%sGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>" argName
+                                        yield sprintf "let _%s = %s(fun %s -> %s.Invoke(%s); _%sGC.Free())" argName objName argDef argName argUse argName
+                                        yield sprintf "_%sGC <- System.Runtime.InteropServices.GCHandle.Alloc(_%s)" argName argName
+                                        yield str
+                                    ]
+
+                                
                             | Object(objName, _) ->
                                 let objName = cleanName objName
 
@@ -530,16 +554,19 @@ let run() =
 
 
                 let wrap, ret =
-                    let ret =  meth.ret |> Option.bind (fun r -> Map.tryFind r all)
-                    match ret with
-                    | Some (Object(name,_)) ->
-                        let n = typeName Default name None
-                        sprintf "%s(%s)" n, n
-                    | Some o ->
-                        let n = typeName Default o.Name None
-                        id, n
-                    | None ->
-                        id, "unit"
+                    if isCallback then
+                        id, "System.IDisposable"
+                    else
+                        let ret =  meth.ret |> Option.bind (fun r -> Map.tryFind r all)
+                        match ret with
+                        | Some (Object(name,_)) ->
+                            let n = typeName Default name None
+                            sprintf "%s(%s)" n, n
+                        | Some o ->
+                            let n = typeName Default o.Name None
+                            id, n
+                        | None ->
+                            id, "unit"
                         
                 let fullName = "DawnRaw.wgpu" + cleanName (name + " " + meth.name)
 

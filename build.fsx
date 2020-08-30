@@ -47,7 +47,6 @@ module Proc =
 
 
 Target.create "DawnWindows" (fun _ ->
- 
     let defPath = Path.Combine(dawnDir, @"abi.def")
     let dllOut = Path.Combine(__SOURCE_DIRECTORY__, "lib", "Native", "DawnSharp", "windows", "AMD64", "dawn.dll")
    
@@ -65,6 +64,9 @@ Target.create "DawnWindows" (fun _ ->
                 Path.Combine(dawnDir, "cmake", "src", "common", "Release", "dawn_common.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawncpp_headers.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawn_headers.lib") 
+
+                Path.Combine(__SOURCE_DIRECTORY__, "bin", "Release", "x64", "DawnNative.lib")
+                //"C:\Users\Schorsch\Development\DawnSharp\bin\Release\x64\DawnNative.lib"
             ]
 
         let dumpbin (file : string) =
@@ -113,63 +115,77 @@ Target.create "DawnWindows" (fun _ ->
 
         File.WriteAllText(defFile, content.ToString())     
 
-    // clean checkout dawn
-    if Directory.Exists dawnDir then
-        let dawnThirdParty = Path.Combine(dawnDir, "third_party")
-        if Directory.Exists dawnThirdParty then Directory.Delete(dawnThirdParty, true)
+    if false then
+        // clean checkout dawn
+        if Directory.Exists dawnDir then
+            let dawnThirdParty = Path.Combine(dawnDir, "third_party")
+            if Directory.Exists dawnThirdParty then Directory.Delete(dawnThirdParty, true)
 
-        Git.CommandHelper.directRunGitCommandAndFail dawnDir "reset --hard"
-        Git.CommandHelper.directRunGitCommandAndFail dawnDir "clean -xdf"
-        Git.CommandHelper.directRunGitCommandAndFail dawnDir "pull"
+            Git.CommandHelper.directRunGitCommandAndFail dawnDir "reset --hard"
+            Git.CommandHelper.directRunGitCommandAndFail dawnDir "clean -xdf"
+            Git.CommandHelper.directRunGitCommandAndFail dawnDir "pull"
 
-    else
-        Git.Repository.clone "." "https://dawn.googlesource.com/dawn" dawnDir
+        else
+            Git.Repository.clone "." "https://dawn.googlesource.com/dawn" dawnDir
 
-    // fix1: python2
-    do
-        let file = Path.Combine(dawnDir, "generator", "CMakeLists.txt")
-        File.WriteAllText(
-            file,
-            File.ReadAllText(file)
-                .Replace("PYTHON_EXECUTABLE", "Python2_EXECUTABLE")
-                .Replace("find_package(PythonInterp REQUIRED)", "find_package(Python2 REQUIRED)")
+        // fix1: python2
+        do
+            let file = Path.Combine(dawnDir, "generator", "CMakeLists.txt")
+            File.WriteAllText(
+                file,
+                File.ReadAllText(file)
+                    .Replace("PYTHON_EXECUTABLE", "Python2_EXECUTABLE")
+                    .Replace("find_package(PythonInterp REQUIRED)", "find_package(Python2 REQUIRED)")
+            )
+
+        // fix2: SHADERC_ENABLE_SHARED_CRT bug
+        do
+            let file = Path.Combine(dawnDir, "third_party", "CMakeLists.txt")
+            File.WriteAllText(
+                file,
+                File.ReadAllText(file)
+                    .Replace("option(SHADERC_ENABLE_SHARED_CRT \"Use the shared CRT instead of the static CRT\" ON CACHE BOOL \"\" FORCE)", "option(SHADERC_ENABLE_SHARED_CRT \"Use the shared CRT instead of the static CRT\" ON)")
+            )
+
+        // copy gclient config
+        File.Copy(Path.Combine(dawnDir, "scripts", "standalone.gclient"), Path.Combine(dawnDir, ".gclient"), true)
+
+        // gclient sync
+        let gclient =
+            Path.Combine(
+                System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
+                "depot_tools",
+                "gclient.bat"
+            )
+        Proc.exec ["DEPOT_TOOLS_WIN_TOOLCHAIN", "0"] gclient ["sync"]
+
+        // cmake . -B cmake
+        Proc.exec [] "cmake" ["."; "-B"; "cmake"]
+
+        // build
+        Path.Combine(dawnDir, "cmake", "ALL_BUILD.vcxproj") |> MSBuild.build (fun (defaults:MSBuildParams) ->
+            { defaults with
+                Verbosity = Some(Quiet)
+                Targets = ["Build"]
+                Properties =
+                    [
+                        "Configuration", "Release"
+                    ]
+            }
         )
 
-    // fix2: SHADERC_ENABLE_SHARED_CRT bug
-    do
-        let file = Path.Combine(dawnDir, "third_party", "CMakeLists.txt")
-        File.WriteAllText(
-            file,
-            File.ReadAllText(file)
-                .Replace("option(SHADERC_ENABLE_SHARED_CRT \"Use the shared CRT instead of the static CRT\" ON CACHE BOOL \"\" FORCE)", "option(SHADERC_ENABLE_SHARED_CRT \"Use the shared CRT instead of the static CRT\" ON)")
+        // build DawnNative
+        "src/DawnNative/DawnNative.vcxproj" |> MSBuild.build (fun (defaults:MSBuildParams) ->
+            { defaults with
+                Verbosity = Some(Quiet)
+                Targets = ["Build"]
+                Properties =
+                    [
+                        "Configuration", "Release"
+                    ]
+            }
         )
 
-    // copy gclient config
-    File.Copy(Path.Combine(dawnDir, "scripts", "standalone.gclient"), Path.Combine(dawnDir, ".gclient"), true)
-
-    // gclient sync
-    let gclient =
-        Path.Combine(
-            System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
-            "depot_tools",
-            "gclient.bat"
-        )
-    Proc.exec ["DEPOT_TOOLS_WIN_TOOLCHAIN", "0"] gclient ["sync"]
-
-    // cmake . -B cmake
-    Proc.exec [] "cmake" ["."; "-B"; "cmake"]
-
-    // build
-    "dawn/cmake/ALL_BUILD.vcxproj" |> MSBuild.build (fun (defaults:MSBuildParams) ->
-        { defaults with
-            Verbosity = Some(Quiet)
-            Targets = ["Build"]
-            Properties =
-                [
-                    "Configuration", "Release"
-                ]
-        }
-    )
 
     // write def
     writeDefFile defPath
@@ -220,6 +236,7 @@ Target.create "DawnWindows" (fun _ ->
                 Path.Combine(dawnDir, "cmake", "third_party", "glslang", "OGLCompilersDLL", "Release", "OGLCompiler.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "third_party", "glslang", "glslang", "Release", "GenericCodeGen.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "third_party", "glfw", "src", "Release", "glfw3.lib") |> lib
+                Path.Combine(__SOURCE_DIRECTORY__, "bin", "Release", "x64", "DawnNative.lib") |> lib
 
                 "user32.lib"
                 "dxguid.lib"
