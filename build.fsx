@@ -60,7 +60,7 @@ Target.create "DawnWindows" (fun _ ->
                 Path.Combine(dawnDir, "cmake", "src", "utils", "Release", "dawn_utils.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "dawn_native", "Release", "dawn_native.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "dawn_platform", "Release", "dawn_platform.lib") 
-                Path.Combine(dawnDir, "cmake", "src", "dawn_wire", "Release", "dawn_wire.lib") 
+                //Path.Combine(dawnDir, "cmake", "src", "dawn_wire", "Release", "dawn_wire.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "common", "Release", "dawn_common.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawncpp_headers.lib") 
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawn_headers.lib") 
@@ -220,7 +220,7 @@ Target.create "DawnWindows" (fun _ ->
                 Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-glsl.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-reflect.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-core.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "src", "dawn_wire", "Release", "dawn_wire.lib") |> lib
+                //Path.Combine(dawnDir, "cmake", "src", "dawn_wire", "Release", "dawn_wire.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "common", "Release", "dawn_common.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawncpp_headers.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawn_headers.lib") |> lib
@@ -299,6 +299,19 @@ Target.create "DawnWindows" (fun _ ->
         |> Proc.run
 
     if linkResult.ExitCode <> 0 then failwithf "linker failed"
+
+    let outDirs = 
+        [
+            Path.Combine(__SOURCE_DIRECTORY__, "bin", "Release", "netcoreapp3.1")
+            Path.Combine(__SOURCE_DIRECTORY__, "bin", "Debug", "netcoreapp3.1")
+        ]
+    let inDir = Path.GetDirectoryName dllOut
+
+    for dir in outDirs do
+        if not (Directory.Exists dir) then Directory.CreateDirectory dir |> ignore
+        for f in Directory.GetFiles inDir do
+            File.Copy(f, Path.Combine(dir, Path.GetFileName f), true)
+
 
 )
 

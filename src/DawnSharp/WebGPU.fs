@@ -32,6 +32,7 @@ type AdapterProperties =
             native.Name <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pName
             native.AdapterType <- x.AdapterType
             native.BackendType <- x.BackendType
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pName
@@ -65,7 +66,6 @@ type BindGroupDescriptor =
     {
         Label : string
         Layout : BindGroupLayout
-        EntryCount : uint32
         Entries : BindGroupEntry[]
     }
     member x.Pin<'a>(action : WGPUBindGroupDescriptor -> 'a) : 'a =
@@ -75,11 +75,12 @@ type BindGroupDescriptor =
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
             native.Layout <- x.Layout.Handle
-            native.EntryCount <- x.EntryCount
+            native.EntryCount <- (if isNull x.Entries then 0u else uint32 x.Entries.Length)
             let rec pinEntries (a : array<BindGroupEntry>) (p : array<_>) (i : int) =
                 if i >= a.Length then
                     use p = fixed p
                     native.Entries <- p
+                    native.pNext <- 0n
                     action native
                 else
                     a.[i].Pin(fun ai -> p.[i] <- ai; pinEntries a p (i+1))
@@ -126,7 +127,6 @@ type WGPUBindGroupLayoutDescriptor =
 type BindGroupLayoutDescriptor =
     {
         Label : string
-        EntryCount : uint32
         Entries : BindGroupLayoutEntry[]
     }
     member x.Pin<'a>(action : WGPUBindGroupLayoutDescriptor -> 'a) : 'a =
@@ -135,11 +135,12 @@ type BindGroupLayoutDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
-            native.EntryCount <- x.EntryCount
+            native.EntryCount <- (if isNull x.Entries then 0u else uint32 x.Entries.Length)
             let rec pinEntries (a : array<BindGroupLayoutEntry>) (p : array<_>) (i : int) =
                 if i >= a.Length then
                     use p = fixed p
                     native.Entries <- p
+                    native.pNext <- 0n
                     action native
                 else
                     a.[i].Pin(fun ai -> p.[i] <- ai; pinEntries a p (i+1))
@@ -252,6 +253,7 @@ type BufferCopyView =
         x.Layout.Pin(fun _Layout ->
             native.Layout <- _Layout
             native.Buffer <- x.Buffer.Handle
+            native.pNext <- 0n
             action native
         )
 type WGPUBufferDescriptor =
@@ -279,6 +281,7 @@ type BufferDescriptor =
             native.Usage <- x.Usage
             native.Size <- x.Size
             native.MappedAtCreation <- x.MappedAtCreation
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -349,6 +352,7 @@ type ColorStateDescriptor =
             x.ColorBlend.Pin(fun _ColorBlend ->
                 native.ColorBlend <- _ColorBlend
                 native.WriteMask <- x.WriteMask
+                native.pNext <- 0n
                 action native
             )
         )
@@ -376,6 +380,7 @@ type CommandBufferDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -395,6 +400,7 @@ type CommandEncoderDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -424,6 +430,7 @@ type ComputePassDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -450,6 +457,7 @@ type ComputePipelineDescriptor =
             native.Layout <- x.Layout.Handle
             x.ComputeStage.Pin(fun _ComputeStage ->
                 native.ComputeStage <- _ComputeStage
+                native.pNext <- 0n
                 action native
             )
         finally
@@ -492,6 +500,7 @@ type DepthStencilStateDescriptor =
                 native.StencilBack <- _StencilBack
                 native.StencilReadMask <- x.StencilReadMask
                 native.StencilWriteMask <- x.StencilWriteMask
+                native.pNext <- 0n
                 action native
             )
         )
@@ -574,6 +583,7 @@ type FenceDescriptor =
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
             native.InitialValue <- x.InitialValue
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -601,6 +611,7 @@ type InstanceDescriptor private () =
     member x.Pin<'a>(action : WGPUInstanceDescriptor -> 'a) : 'a =
         let x = x
         let mutable native = Unchecked.defaultof<WGPUInstanceDescriptor>
+        native.pNext <- 0n
         action native
 type LoadOp =
     | Clear = 0
@@ -641,7 +652,6 @@ type WGPUPipelineLayoutDescriptor =
 type PipelineLayoutDescriptor =
     {
         Label : string
-        BindGroupLayoutCount : uint32
         BindGroupLayouts : BindGroupLayout[]
     }
     member x.Pin<'a>(action : WGPUPipelineLayoutDescriptor -> 'a) : 'a =
@@ -650,10 +660,11 @@ type PipelineLayoutDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
-            native.BindGroupLayoutCount <- x.BindGroupLayoutCount
+            native.BindGroupLayoutCount <- (if isNull x.BindGroupLayouts then 0u else uint32 x.BindGroupLayouts.Length)
             let _BindGroupLayouts = x.BindGroupLayouts |> Array.map (fun a -> a.Handle)
             use _BindGroupLayouts = fixed _BindGroupLayouts
             native.BindGroupLayouts <- _BindGroupLayouts
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -692,6 +703,7 @@ type ProgrammableStageDescriptor =
         let pEntryPoint = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.EntryPoint
         try
             native.EntryPoint <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pEntryPoint
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pEntryPoint
@@ -724,6 +736,7 @@ type QuerySetDescriptor =
             use _PipelineStatistics = fixed x.PipelineStatistics
             native.PipelineStatistics <- _PipelineStatistics
             native.PipelineStatisticsCount <- x.PipelineStatisticsCount
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -757,6 +770,7 @@ type RasterizationStateDescriptor =
         native.DepthBias <- x.DepthBias
         native.DepthBiasSlopeScale <- x.DepthBiasSlopeScale
         native.DepthBiasClamp <- x.DepthBiasClamp
+        native.pNext <- 0n
         action native
 type WGPURenderBundleDescriptor =
     struct
@@ -774,6 +788,7 @@ type RenderBundleDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -790,7 +805,6 @@ type WGPURenderBundleEncoderDescriptor =
 type RenderBundleEncoderDescriptor =
     {
         Label : string
-        ColorFormatsCount : uint32
         ColorFormats : TextureFormat[]
         DepthStencilFormat : TextureFormat
         SampleCount : uint32
@@ -801,11 +815,12 @@ type RenderBundleEncoderDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
-            native.ColorFormatsCount <- x.ColorFormatsCount
+            native.ColorFormatsCount <- (if isNull x.ColorFormats then 0u else uint32 x.ColorFormats.Length)
             use _ColorFormats = fixed x.ColorFormats
             native.ColorFormats <- _ColorFormats
             native.DepthStencilFormat <- x.DepthStencilFormat
             native.SampleCount <- x.SampleCount
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -888,7 +903,6 @@ type WGPURenderPassDescriptor =
 type RenderPassDescriptor =
     {
         Label : string
-        ColorAttachmentCount : uint32
         ColorAttachments : RenderPassColorAttachmentDescriptor[]
         DepthStencilAttachment : RenderPassDepthStencilAttachmentDescriptor[]
         OcclusionQuerySet : QuerySet
@@ -899,7 +913,7 @@ type RenderPassDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
-            native.ColorAttachmentCount <- x.ColorAttachmentCount
+            native.ColorAttachmentCount <- (if isNull x.ColorAttachments then 0u else uint32 x.ColorAttachments.Length)
             let rec pinColorAttachments (a : array<RenderPassColorAttachmentDescriptor>) (p : array<_>) (i : int) =
                 if i >= a.Length then
                     use p = fixed p
@@ -909,6 +923,7 @@ type RenderPassDescriptor =
                             use p = fixed p
                             native.DepthStencilAttachment <- p
                             native.OcclusionQuerySet <- x.OcclusionQuerySet.Handle
+                            native.pNext <- 0n
                             action native
                         else
                             a.[i].Pin(fun ai -> p.[i] <- ai; pinDepthStencilAttachment a p (i+1))
@@ -947,7 +962,6 @@ type RenderPipelineDescriptor =
         RasterizationState : RasterizationStateDescriptor[]
         SampleCount : uint32
         DepthStencilState : DepthStencilStateDescriptor[]
-        ColorStateCount : uint32
         ColorStates : ColorStateDescriptor[]
         SampleMask : uint32
         AlphaToCoverageEnabled : int
@@ -979,13 +993,14 @@ type RenderPipelineDescriptor =
                                             if i >= a.Length then
                                                 use p = fixed p
                                                 native.DepthStencilState <- p
-                                                native.ColorStateCount <- x.ColorStateCount
+                                                native.ColorStateCount <- (if isNull x.ColorStates then 0u else uint32 x.ColorStates.Length)
                                                 let rec pinColorStates (a : array<ColorStateDescriptor>) (p : array<_>) (i : int) =
                                                     if i >= a.Length then
                                                         use p = fixed p
                                                         native.ColorStates <- p
                                                         native.SampleMask <- x.SampleMask
                                                         native.AlphaToCoverageEnabled <- x.AlphaToCoverageEnabled
+                                                        native.pNext <- 0n
                                                         action native
                                                     else
                                                         a.[i].Pin(fun ai -> p.[i] <- ai; pinColorStates a p (i+1))
@@ -1074,6 +1089,7 @@ type SamplerDescriptor =
             native.LodMinClamp <- x.LodMinClamp
             native.LodMaxClamp <- x.LodMaxClamp
             native.Compare <- x.Compare
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -1143,6 +1159,7 @@ type ShaderModuleDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -1203,6 +1220,7 @@ type SurfaceDescriptor =
         let pLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
         try
             native.Label <- Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt pLabel
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -1306,6 +1324,7 @@ type SwapChainDescriptor =
             native.Height <- x.Height
             native.PresentMode <- x.PresentMode
             native.Implementation <- x.Implementation
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -1341,6 +1360,7 @@ type TextureCopyView =
         x.Origin.Pin(fun _Origin ->
             native.Origin <- _Origin
             native.Aspect <- x.Aspect
+            native.pNext <- 0n
             action native
         )
 type WGPUTextureDataLayout =
@@ -1363,6 +1383,7 @@ type TextureDataLayout =
         native.Offset <- x.Offset
         native.BytesPerRow <- x.BytesPerRow
         native.RowsPerImage <- x.RowsPerImage
+        native.pNext <- 0n
         action native
 type WGPUTextureDescriptor =
     struct
@@ -1399,6 +1420,7 @@ type TextureDescriptor =
                 native.Format <- x.Format
                 native.MipLevelCount <- x.MipLevelCount
                 native.SampleCount <- x.SampleCount
+                native.pNext <- 0n
                 action native
             )
         finally
@@ -1508,6 +1530,7 @@ type TextureViewDescriptor =
             native.BaseArrayLayer <- x.BaseArrayLayer
             native.ArrayLayerCount <- x.ArrayLayerCount
             native.Aspect <- x.Aspect
+            native.pNext <- 0n
             action native
         finally
             System.Runtime.InteropServices.Marshal.FreeHGlobal pLabel
@@ -1551,7 +1574,6 @@ type VertexBufferLayoutDescriptor =
     {
         ArrayStride : uint64
         StepMode : InputStepMode
-        AttributeCount : uint32
         Attributes : VertexAttributeDescriptor[]
     }
     member x.Pin<'a>(action : WGPUVertexBufferLayoutDescriptor -> 'a) : 'a =
@@ -1559,7 +1581,7 @@ type VertexBufferLayoutDescriptor =
         let mutable native = Unchecked.defaultof<WGPUVertexBufferLayoutDescriptor>
         native.ArrayStride <- x.ArrayStride
         native.StepMode <- x.StepMode
-        native.AttributeCount <- x.AttributeCount
+        native.AttributeCount <- (if isNull x.Attributes then 0u else uint32 x.Attributes.Length)
         let rec pinAttributes (a : array<VertexAttributeDescriptor>) (p : array<_>) (i : int) =
             if i >= a.Length then
                 use p = fixed p
@@ -1610,18 +1632,18 @@ type WGPUVertexStateDescriptor =
 type VertexStateDescriptor =
     {
         IndexFormat : IndexFormat
-        VertexBufferCount : uint32
         VertexBuffers : VertexBufferLayoutDescriptor[]
     }
     member x.Pin<'a>(action : WGPUVertexStateDescriptor -> 'a) : 'a =
         let x = x
         let mutable native = Unchecked.defaultof<WGPUVertexStateDescriptor>
         native.IndexFormat <- x.IndexFormat
-        native.VertexBufferCount <- x.VertexBufferCount
+        native.VertexBufferCount <- (if isNull x.VertexBuffers then 0u else uint32 x.VertexBuffers.Length)
         let rec pinVertexBuffers (a : array<VertexBufferLayoutDescriptor>) (p : array<_>) (i : int) =
             if i >= a.Length then
                 use p = fixed p
                 native.VertexBuffers <- p
+                native.pNext <- 0n
                 action native
             else
                 a.[i].Pin(fun ai -> p.[i] <- ai; pinVertexBuffers a p (i+1))
@@ -1630,6 +1652,18 @@ module DawnRaw =
     open System.Runtime.InteropServices
     open System.Security
 
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuBindGroupReference(BindGroupHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuBindGroupRelease(BindGroupHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuBindGroupLayoutReference(BindGroupLayoutHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuBindGroupLayoutRelease(BindGroupLayoutHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuBufferReference(BufferHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuBufferRelease(BufferHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuBufferMapAsync(BufferHandle Self, MapMode Mode, unativeint Offset, unativeint Size, nativeint Callback, nativeint Userdata)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1640,6 +1674,14 @@ module DawnRaw =
     extern void wgpuBufferUnmap(BufferHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuBufferDestroy(BufferHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuCommandBufferReference(CommandBufferHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuCommandBufferRelease(CommandBufferHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuCommandEncoderReference(CommandEncoderHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuCommandEncoderRelease(CommandEncoderHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern CommandBufferHandle wgpuCommandEncoderFinish(CommandEncoderHandle Self, WGPUCommandBufferDescriptor* Descriptor)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1665,6 +1707,10 @@ module DawnRaw =
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuCommandEncoderWriteTimestamp(CommandEncoderHandle Self, QuerySetHandle QuerySet, uint32 QueryIndex)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuComputePassEncoderReference(ComputePassEncoderHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuComputePassEncoderRelease(ComputePassEncoderHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuComputePassEncoderInsertDebugMarker(ComputePassEncoderHandle Self, byte* MarkerLabel)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuComputePassEncoderPopDebugGroup(ComputePassEncoderHandle Self)
@@ -1683,7 +1729,15 @@ module DawnRaw =
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuComputePassEncoderEndPass(ComputePassEncoderHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuComputePipelineReference(ComputePipelineHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuComputePipelineRelease(ComputePipelineHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern BindGroupLayoutHandle wgpuComputePipelineGetBindGroupLayout(ComputePipelineHandle Self, uint32 GroupIndex)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuDeviceReference(DeviceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuDeviceRelease(DeviceHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern BindGroupHandle wgpuDeviceCreateBindGroup(DeviceHandle Self, WGPUBindGroupDescriptor* Descriptor)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1729,13 +1783,33 @@ module DawnRaw =
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern int wgpuDevicePopErrorScope(DeviceHandle Self, nativeint Callback, nativeint Userdata)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuFenceReference(FenceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuFenceRelease(FenceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern uint64 wgpuFenceGetCompletedValue(FenceHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuFenceOnCompletion(FenceHandle Self, uint64 Value, nativeint Callback, nativeint Userdata)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuInstanceReference(InstanceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuInstanceRelease(InstanceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern SurfaceHandle wgpuInstanceCreateSurface(InstanceHandle Self, WGPUSurfaceDescriptor* Descriptor)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuPipelineLayoutReference(PipelineLayoutHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuPipelineLayoutRelease(PipelineLayoutHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuQuerySetReference(QuerySetHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuQuerySetRelease(QuerySetHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuQuerySetDestroy(QuerySetHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuQueueReference(QueueHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuQueueRelease(QueueHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuQueueSubmit(QueueHandle Self, uint32 CommandCount, CommandBufferHandle* Commands)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1746,6 +1820,14 @@ module DawnRaw =
     extern void wgpuQueueWriteBuffer(QueueHandle Self, BufferHandle Buffer, uint64 BufferOffset, nativeint Data, unativeint Size)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuQueueWriteTexture(QueueHandle Self, WGPUTextureCopyView* Destination, nativeint Data, unativeint DataSize, WGPUTextureDataLayout* DataLayout, WGPUExtent3D* WriteSize)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderBundleReference(RenderBundleHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderBundleRelease(RenderBundleHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderBundleEncoderReference(RenderBundleEncoderHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderBundleEncoderRelease(RenderBundleEncoderHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuRenderBundleEncoderSetPipeline(RenderBundleEncoderHandle Self, RenderPipelineHandle Pipeline)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1772,6 +1854,10 @@ module DawnRaw =
     extern void wgpuRenderBundleEncoderSetIndexBufferWithFormat(RenderBundleEncoderHandle Self, BufferHandle Buffer, IndexFormat Format, uint64 Offset, uint64 Size)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern RenderBundleHandle wgpuRenderBundleEncoderFinish(RenderBundleEncoderHandle Self, WGPURenderBundleDescriptor* Descriptor)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderPassEncoderReference(RenderPassEncoderHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderPassEncoderRelease(RenderPassEncoderHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuRenderPassEncoderSetPipeline(RenderPassEncoderHandle Self, RenderPipelineHandle Pipeline)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1811,7 +1897,27 @@ module DawnRaw =
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuRenderPassEncoderEndPass(RenderPassEncoderHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderPipelineReference(RenderPipelineHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuRenderPipelineRelease(RenderPipelineHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern BindGroupLayoutHandle wgpuRenderPipelineGetBindGroupLayout(RenderPipelineHandle Self, uint32 GroupIndex)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuSamplerReference(SamplerHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuSamplerRelease(SamplerHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuShaderModuleReference(ShaderModuleHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuShaderModuleRelease(ShaderModuleHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuSurfaceReference(SurfaceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuSurfaceRelease(SurfaceHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuSwapChainReference(SwapChainHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuSwapChainRelease(SwapChainHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuSwapChainConfigure(SwapChainHandle Self, TextureFormat Format, TextureUsage AllowedUsage, uint32 Width, uint32 Height)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
@@ -1819,301 +1925,397 @@ module DawnRaw =
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuSwapChainPresent(SwapChainHandle Self)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuTextureReference(TextureHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuTextureRelease(TextureHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern TextureViewHandle wgpuTextureCreateView(TextureHandle Self, WGPUTextureViewDescriptor* Descriptor)
     [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
     extern void wgpuTextureDestroy(TextureHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuTextureViewReference(TextureViewHandle Self)
+    [<DllImport("dawn"); SuppressUnmanagedCodeSecurity>]
+    extern void wgpuTextureViewRelease(TextureViewHandle Self)
 type BindGroupHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type BindGroup(handle : BindGroupHandle) =
+type BindGroup(device : Device, handle : BindGroupHandle) =
     member x.Handle : BindGroupHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuBindGroupReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuBindGroupRelease(handle)
 type BindGroupLayoutHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type BindGroupLayout(handle : BindGroupLayoutHandle) =
+type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle) =
     member x.Handle : BindGroupLayoutHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuBindGroupLayoutReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuBindGroupLayoutRelease(handle)
 type BufferHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Buffer(handle : BufferHandle) =
+type Buffer(device : Device, handle : BufferHandle) =
     member x.Handle : BufferHandle = handle
-    member x.MapAsync(Mode, Offset, Size, Callback : BufferMapCallback, Userdata : nativeint) : unit =
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuBufferReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuBufferRelease(handle)
+    member x.MapAsync(Mode, Offset, Size, Callback : BufferMapCallback, Userdata) : unit =
+        let device = device
         let handle = handle
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _Callback = BufferMapCallback(fun Status Userdata -> Callback.Invoke(Status, Userdata); _CallbackGC.Free())
         _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_Callback)
         DawnRaw.wgpuBufferMapAsync(handle, Mode, Offset, Size, System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate _Callback, Userdata)
     member x.GetMappedRange(Offset, Size) : nativeint =
+        let device = device
         let handle = handle
         DawnRaw.wgpuBufferGetMappedRange(handle, Offset, Size)
     member x.GetConstMappedRange(Offset, Size) : nativeint =
+        let device = device
         let handle = handle
         DawnRaw.wgpuBufferGetConstMappedRange(handle, Offset, Size)
     member x.Unmap() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuBufferUnmap(handle)
     member x.Destroy() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuBufferDestroy(handle)
 type CommandBufferHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type CommandBuffer(handle : CommandBufferHandle) =
+type CommandBuffer(device : Device, handle : CommandBufferHandle) =
     member x.Handle : CommandBufferHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuCommandBufferReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuCommandBufferRelease(handle)
 type CommandEncoderHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type CommandEncoder(handle : CommandEncoderHandle) =
+type CommandEncoder(device : Device, handle : CommandEncoderHandle) =
     member x.Handle : CommandEncoderHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuCommandEncoderReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuCommandEncoderRelease(handle)
     member x.Finish(Descriptor : CommandBufferDescriptor) : CommandBuffer =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            CommandBuffer(DawnRaw.wgpuCommandEncoderFinish(handle, _Descriptor))
+            CommandBuffer(device, DawnRaw.wgpuCommandEncoderFinish(handle, _Descriptor))
         )
     member x.BeginComputePass(Descriptor : ComputePassDescriptor) : ComputePassEncoder =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            ComputePassEncoder(DawnRaw.wgpuCommandEncoderBeginComputePass(handle, _Descriptor))
+            ComputePassEncoder(device, DawnRaw.wgpuCommandEncoderBeginComputePass(handle, _Descriptor))
         )
     member x.BeginRenderPass(Descriptor : RenderPassDescriptor) : RenderPassEncoder =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            RenderPassEncoder(DawnRaw.wgpuCommandEncoderBeginRenderPass(handle, _Descriptor))
+            RenderPassEncoder(device, DawnRaw.wgpuCommandEncoderBeginRenderPass(handle, _Descriptor))
         )
     member x.CopyBufferToBuffer(Source : Buffer, SourceOffset, Destination : Buffer, DestinationOffset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuCommandEncoderCopyBufferToBuffer(handle, Source.Handle, SourceOffset, Destination.Handle, DestinationOffset, Size)
-    member x.CopyBufferToTexture(Source : BufferCopyView[], Destination : TextureCopyView[], CopySize : Extent3D[]) : unit =
+    member x.CopyBufferToTexture(Source : BufferCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit =
+        let device = device
         let handle = handle
-        let rec pinCopySize (a : array<Extent3D>) (p : array<_>) (i : int) =
-            if i >= a.Length then
-                use _CopySize = fixed p
-                let rec pinDestination (a : array<TextureCopyView>) (p : array<_>) (i : int) =
-                    if i >= a.Length then
-                        use _Destination = fixed p
-                        let rec pinSource (a : array<BufferCopyView>) (p : array<_>) (i : int) =
-                            if i >= a.Length then
-                                use _Source = fixed p
-                                DawnRaw.wgpuCommandEncoderCopyBufferToTexture(handle, _Source, _Destination, _CopySize)
-                            else
-                                a.[i].Pin(fun ai -> p.[i] <- ai; pinSource a p (i+1))
-                        pinSource Source (Array.zeroCreate Source.Length) 0
-                    else
-                        a.[i].Pin(fun ai -> p.[i] <- ai; pinDestination a p (i+1))
-                pinDestination Destination (Array.zeroCreate Destination.Length) 0
-            else
-                a.[i].Pin(fun ai -> p.[i] <- ai; pinCopySize a p (i+1))
-        pinCopySize CopySize (Array.zeroCreate CopySize.Length) 0
-    member x.CopyTextureToBuffer(Source : TextureCopyView[], Destination : BufferCopyView[], CopySize : Extent3D[]) : unit =
+        Source.Pin(fun _Source ->
+            use _Source = fixed [| _Source |]
+            Destination.Pin(fun _Destination ->
+                use _Destination = fixed [| _Destination |]
+                CopySize.Pin(fun _CopySize ->
+                    use _CopySize = fixed [| _CopySize |]
+                    DawnRaw.wgpuCommandEncoderCopyBufferToTexture(handle, _Source, _Destination, _CopySize)
+                )
+            )
+        )
+    member x.CopyTextureToBuffer(Source : TextureCopyView, Destination : BufferCopyView, CopySize : Extent3D) : unit =
+        let device = device
         let handle = handle
-        let rec pinCopySize (a : array<Extent3D>) (p : array<_>) (i : int) =
-            if i >= a.Length then
-                use _CopySize = fixed p
-                let rec pinDestination (a : array<BufferCopyView>) (p : array<_>) (i : int) =
-                    if i >= a.Length then
-                        use _Destination = fixed p
-                        let rec pinSource (a : array<TextureCopyView>) (p : array<_>) (i : int) =
-                            if i >= a.Length then
-                                use _Source = fixed p
-                                DawnRaw.wgpuCommandEncoderCopyTextureToBuffer(handle, _Source, _Destination, _CopySize)
-                            else
-                                a.[i].Pin(fun ai -> p.[i] <- ai; pinSource a p (i+1))
-                        pinSource Source (Array.zeroCreate Source.Length) 0
-                    else
-                        a.[i].Pin(fun ai -> p.[i] <- ai; pinDestination a p (i+1))
-                pinDestination Destination (Array.zeroCreate Destination.Length) 0
-            else
-                a.[i].Pin(fun ai -> p.[i] <- ai; pinCopySize a p (i+1))
-        pinCopySize CopySize (Array.zeroCreate CopySize.Length) 0
-    member x.CopyTextureToTexture(Source : TextureCopyView[], Destination : TextureCopyView[], CopySize : Extent3D[]) : unit =
+        Source.Pin(fun _Source ->
+            use _Source = fixed [| _Source |]
+            Destination.Pin(fun _Destination ->
+                use _Destination = fixed [| _Destination |]
+                CopySize.Pin(fun _CopySize ->
+                    use _CopySize = fixed [| _CopySize |]
+                    DawnRaw.wgpuCommandEncoderCopyTextureToBuffer(handle, _Source, _Destination, _CopySize)
+                )
+            )
+        )
+    member x.CopyTextureToTexture(Source : TextureCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit =
+        let device = device
         let handle = handle
-        let rec pinCopySize (a : array<Extent3D>) (p : array<_>) (i : int) =
-            if i >= a.Length then
-                use _CopySize = fixed p
-                let rec pinDestination (a : array<TextureCopyView>) (p : array<_>) (i : int) =
-                    if i >= a.Length then
-                        use _Destination = fixed p
-                        let rec pinSource (a : array<TextureCopyView>) (p : array<_>) (i : int) =
-                            if i >= a.Length then
-                                use _Source = fixed p
-                                DawnRaw.wgpuCommandEncoderCopyTextureToTexture(handle, _Source, _Destination, _CopySize)
-                            else
-                                a.[i].Pin(fun ai -> p.[i] <- ai; pinSource a p (i+1))
-                        pinSource Source (Array.zeroCreate Source.Length) 0
-                    else
-                        a.[i].Pin(fun ai -> p.[i] <- ai; pinDestination a p (i+1))
-                pinDestination Destination (Array.zeroCreate Destination.Length) 0
-            else
-                a.[i].Pin(fun ai -> p.[i] <- ai; pinCopySize a p (i+1))
-        pinCopySize CopySize (Array.zeroCreate CopySize.Length) 0
-    member x.InsertDebugMarker(MarkerLabel : byte[]) : unit =
+        Source.Pin(fun _Source ->
+            use _Source = fixed [| _Source |]
+            Destination.Pin(fun _Destination ->
+                use _Destination = fixed [| _Destination |]
+                CopySize.Pin(fun _CopySize ->
+                    use _CopySize = fixed [| _CopySize |]
+                    DawnRaw.wgpuCommandEncoderCopyTextureToTexture(handle, _Source, _Destination, _CopySize)
+                )
+            )
+        )
+    member x.InsertDebugMarker(MarkerLabel) : unit =
+        let device = device
         let handle = handle
-        use _MarkerLabel = fixed MarkerLabel
-        DawnRaw.wgpuCommandEncoderInsertDebugMarker(handle, _MarkerLabel)
+        DawnRaw.wgpuCommandEncoderInsertDebugMarker(handle, MarkerLabel)
     member x.PopDebugGroup() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuCommandEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : byte[]) : unit =
+    member x.PushDebugGroup(GroupLabel) : unit =
+        let device = device
         let handle = handle
-        use _GroupLabel = fixed GroupLabel
-        DawnRaw.wgpuCommandEncoderPushDebugGroup(handle, _GroupLabel)
+        DawnRaw.wgpuCommandEncoderPushDebugGroup(handle, GroupLabel)
     member x.ResolveQuerySet(QuerySet : QuerySet, FirstQuery, QueryCount, Destination : Buffer, DestinationOffset) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuCommandEncoderResolveQuerySet(handle, QuerySet.Handle, FirstQuery, QueryCount, Destination.Handle, DestinationOffset)
     member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuCommandEncoderWriteTimestamp(handle, QuerySet.Handle, QueryIndex)
 type ComputePassEncoderHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type ComputePassEncoder(handle : ComputePassEncoderHandle) =
+type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle) =
     member x.Handle : ComputePassEncoderHandle = handle
-    member x.InsertDebugMarker(MarkerLabel : byte[]) : unit =
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
         let handle = handle
-        use _MarkerLabel = fixed MarkerLabel
-        DawnRaw.wgpuComputePassEncoderInsertDebugMarker(handle, _MarkerLabel)
+        DawnRaw.wgpuComputePassEncoderReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuComputePassEncoderRelease(handle)
+    member x.InsertDebugMarker(MarkerLabel) : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuComputePassEncoderInsertDebugMarker(handle, MarkerLabel)
     member x.PopDebugGroup() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuComputePassEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : byte[]) : unit =
+    member x.PushDebugGroup(GroupLabel) : unit =
+        let device = device
         let handle = handle
-        use _GroupLabel = fixed GroupLabel
-        DawnRaw.wgpuComputePassEncoderPushDebugGroup(handle, _GroupLabel)
+        DawnRaw.wgpuComputePassEncoderPushDebugGroup(handle, GroupLabel)
     member x.SetPipeline(Pipeline : ComputePipeline) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuComputePassEncoderSetPipeline(handle, Pipeline.Handle)
-    member x.SetBindGroup(GroupIndex, Group : BindGroup, DynamicOffsetCount, DynamicOffsets : uint32[]) : unit =
+    member x.SetBindGroup(GroupIndex, Group : BindGroup, DynamicOffsets : uint32[]) : unit =
+        let device = device
         let handle = handle
         use _DynamicOffsets = fixed DynamicOffsets
-        DawnRaw.wgpuComputePassEncoderSetBindGroup(handle, GroupIndex, Group.Handle, DynamicOffsetCount, _DynamicOffsets)
+        DawnRaw.wgpuComputePassEncoderSetBindGroup(handle, GroupIndex, Group.Handle, (if isNull DynamicOffsets then 0u else uint32 DynamicOffsets.Length), _DynamicOffsets)
     member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuComputePassEncoderWriteTimestamp(handle, QuerySet.Handle, QueryIndex)
     member x.Dispatch(X, Y, Z) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuComputePassEncoderDispatch(handle, X, Y, Z)
     member x.DispatchIndirect(IndirectBuffer : Buffer, IndirectOffset) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuComputePassEncoderDispatchIndirect(handle, IndirectBuffer.Handle, IndirectOffset)
     member x.EndPass() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuComputePassEncoderEndPass(handle)
 type ComputePipelineHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type ComputePipeline(handle : ComputePipelineHandle) =
+type ComputePipeline(device : Device, handle : ComputePipelineHandle) =
     member x.Handle : ComputePipelineHandle = handle
-    member x.GetBindGroupLayout(GroupIndex) : BindGroupLayout =
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
         let handle = handle
-        BindGroupLayout(DawnRaw.wgpuComputePipelineGetBindGroupLayout(handle, GroupIndex))
+        DawnRaw.wgpuComputePipelineReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuComputePipelineRelease(handle)
+    member x.GetBindGroupLayout(GroupIndex) : BindGroupLayout =
+        let device = device
+        let handle = handle
+        BindGroupLayout(device, DawnRaw.wgpuComputePipelineGetBindGroupLayout(handle, GroupIndex))
 type DeviceHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
 type Device(handle : DeviceHandle) =
     member x.Handle : DeviceHandle = handle
+    member x.Reference() : unit =
+        let device = x
+        let handle = handle
+        DawnRaw.wgpuDeviceReference(handle)
+    member x.Release() : unit =
+        let device = x
+        let handle = handle
+        DawnRaw.wgpuDeviceRelease(handle)
     member x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            BindGroup(DawnRaw.wgpuDeviceCreateBindGroup(handle, _Descriptor))
+            BindGroup(device, DawnRaw.wgpuDeviceCreateBindGroup(handle, _Descriptor))
         )
     member x.CreateBindGroupLayout(Descriptor : BindGroupLayoutDescriptor) : BindGroupLayout =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            BindGroupLayout(DawnRaw.wgpuDeviceCreateBindGroupLayout(handle, _Descriptor))
+            BindGroupLayout(device, DawnRaw.wgpuDeviceCreateBindGroupLayout(handle, _Descriptor))
         )
     member x.CreateBuffer(Descriptor : BufferDescriptor) : Buffer =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            Buffer(DawnRaw.wgpuDeviceCreateBuffer(handle, _Descriptor))
+            Buffer(device, DawnRaw.wgpuDeviceCreateBuffer(handle, _Descriptor))
         )
     member x.CreateErrorBuffer() : Buffer =
+        let device = x
         let handle = handle
-        Buffer(DawnRaw.wgpuDeviceCreateErrorBuffer(handle))
+        Buffer(device, DawnRaw.wgpuDeviceCreateErrorBuffer(handle))
     member x.CreateCommandEncoder(Descriptor : CommandEncoderDescriptor) : CommandEncoder =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            CommandEncoder(DawnRaw.wgpuDeviceCreateCommandEncoder(handle, _Descriptor))
+            CommandEncoder(device, DawnRaw.wgpuDeviceCreateCommandEncoder(handle, _Descriptor))
         )
     member x.CreateComputePipeline(Descriptor : ComputePipelineDescriptor) : ComputePipeline =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            ComputePipeline(DawnRaw.wgpuDeviceCreateComputePipeline(handle, _Descriptor))
+            ComputePipeline(device, DawnRaw.wgpuDeviceCreateComputePipeline(handle, _Descriptor))
         )
     member x.CreatePipelineLayout(Descriptor : PipelineLayoutDescriptor) : PipelineLayout =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            PipelineLayout(DawnRaw.wgpuDeviceCreatePipelineLayout(handle, _Descriptor))
+            PipelineLayout(device, DawnRaw.wgpuDeviceCreatePipelineLayout(handle, _Descriptor))
         )
     member x.CreateQuerySet(Descriptor : QuerySetDescriptor) : QuerySet =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            QuerySet(DawnRaw.wgpuDeviceCreateQuerySet(handle, _Descriptor))
+            QuerySet(device, DawnRaw.wgpuDeviceCreateQuerySet(handle, _Descriptor))
         )
     member x.CreateRenderBundleEncoder(Descriptor : RenderBundleEncoderDescriptor) : RenderBundleEncoder =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            RenderBundleEncoder(DawnRaw.wgpuDeviceCreateRenderBundleEncoder(handle, _Descriptor))
+            RenderBundleEncoder(device, DawnRaw.wgpuDeviceCreateRenderBundleEncoder(handle, _Descriptor))
         )
     member x.CreateRenderPipeline(Descriptor : RenderPipelineDescriptor) : RenderPipeline =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            RenderPipeline(DawnRaw.wgpuDeviceCreateRenderPipeline(handle, _Descriptor))
+            RenderPipeline(device, DawnRaw.wgpuDeviceCreateRenderPipeline(handle, _Descriptor))
         )
     member x.CreateSampler(Descriptor : SamplerDescriptor) : Sampler =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            Sampler(DawnRaw.wgpuDeviceCreateSampler(handle, _Descriptor))
+            Sampler(device, DawnRaw.wgpuDeviceCreateSampler(handle, _Descriptor))
         )
     member x.CreateShaderModule(Descriptor : ShaderModuleDescriptor) : ShaderModule =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            ShaderModule(DawnRaw.wgpuDeviceCreateShaderModule(handle, _Descriptor))
+            ShaderModule(device, DawnRaw.wgpuDeviceCreateShaderModule(handle, _Descriptor))
         )
     member x.CreateSwapChain(Surface : Surface, Descriptor : SwapChainDescriptor) : SwapChain =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            SwapChain(DawnRaw.wgpuDeviceCreateSwapChain(handle, Surface.Handle, _Descriptor))
+            SwapChain(device, DawnRaw.wgpuDeviceCreateSwapChain(handle, Surface.Handle, _Descriptor))
         )
     member x.CreateTexture(Descriptor : TextureDescriptor) : Texture =
+        let device = x
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            Texture(DawnRaw.wgpuDeviceCreateTexture(handle, _Descriptor))
+            Texture(device, DawnRaw.wgpuDeviceCreateTexture(handle, _Descriptor))
         )
     member x.GetDefaultQueue() : Queue =
+        let device = x
         let handle = handle
-        Queue(DawnRaw.wgpuDeviceGetDefaultQueue(handle))
-    member x.InjectError(Type, Message : byte[]) : unit =
+        Queue(device, DawnRaw.wgpuDeviceGetDefaultQueue(handle))
+    member x.InjectError(Type, Message) : unit =
+        let device = x
         let handle = handle
-        use _Message = fixed Message
-        DawnRaw.wgpuDeviceInjectError(handle, Type, _Message)
+        DawnRaw.wgpuDeviceInjectError(handle, Type, Message)
     member x.LoseForTesting() : unit =
+        let device = x
         let handle = handle
         DawnRaw.wgpuDeviceLoseForTesting(handle)
     member x.Tick() : unit =
+        let device = x
         let handle = handle
         DawnRaw.wgpuDeviceTick(handle)
-    member x.SetUncapturedErrorCallback(Callback : ErrorCallback, Userdata : nativeint) : System.IDisposable =
+    member x.SetUncapturedErrorCallback(Callback : ErrorCallback, Userdata) : System.IDisposable =
+        let device = x
         let handle = handle
         let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(Callback)
         DawnRaw.wgpuDeviceSetUncapturedErrorCallback(handle, System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate Callback, Userdata)
         { new System.IDisposable with member x.Dispose() = _CallbackGC.Free() }
-    member x.SetDeviceLostCallback(Callback : DeviceLostCallback, Userdata : nativeint) : System.IDisposable =
+    member x.SetDeviceLostCallback(Callback : DeviceLostCallback, Userdata) : System.IDisposable =
+        let device = x
         let handle = handle
         let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(Callback)
         DawnRaw.wgpuDeviceSetDeviceLostCallback(handle, System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate Callback, Userdata)
         { new System.IDisposable with member x.Dispose() = _CallbackGC.Free() }
     member x.PushErrorScope(Filter) : unit =
+        let device = x
         let handle = handle
         DawnRaw.wgpuDevicePushErrorScope(handle, Filter)
-    member x.PopErrorScope(Callback : ErrorCallback, Userdata : nativeint) : int =
+    member x.PopErrorScope(Callback : ErrorCallback, Userdata) : int =
+        let device = x
         let handle = handle
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _Callback = ErrorCallback(fun Type Message Userdata -> Callback.Invoke(Type, Message, Userdata); _CallbackGC.Free())
@@ -2121,12 +2323,23 @@ type Device(handle : DeviceHandle) =
         DawnRaw.wgpuDevicePopErrorScope(handle, System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate _Callback, Userdata)
 type FenceHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Fence(handle : FenceHandle) =
+type Fence(device : Device, handle : FenceHandle) =
     member x.Handle : FenceHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuFenceReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuFenceRelease(handle)
     member x.GetCompletedValue() : uint64 =
+        let device = device
         let handle = handle
         DawnRaw.wgpuFenceGetCompletedValue(handle)
-    member x.OnCompletion(Value, Callback : FenceOnCompletionCallback, Userdata : nativeint) : unit =
+    member x.OnCompletion(Value, Callback : FenceOnCompletionCallback, Userdata) : unit =
+        let device = device
         let handle = handle
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _Callback = FenceOnCompletionCallback(fun Status Userdata -> Callback.Invoke(Status, Userdata); _CallbackGC.Free())
@@ -2134,238 +2347,393 @@ type Fence(handle : FenceHandle) =
         DawnRaw.wgpuFenceOnCompletion(handle, Value, System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate _Callback, Userdata)
 type InstanceHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Instance(handle : InstanceHandle) =
+type Instance(device : Device, handle : InstanceHandle) =
     member x.Handle : InstanceHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuInstanceReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuInstanceRelease(handle)
     member x.CreateSurface(Descriptor : SurfaceDescriptor) : Surface =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            Surface(DawnRaw.wgpuInstanceCreateSurface(handle, _Descriptor))
+            Surface(device, DawnRaw.wgpuInstanceCreateSurface(handle, _Descriptor))
         )
 type PipelineLayoutHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type PipelineLayout(handle : PipelineLayoutHandle) =
+type PipelineLayout(device : Device, handle : PipelineLayoutHandle) =
     member x.Handle : PipelineLayoutHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuPipelineLayoutReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuPipelineLayoutRelease(handle)
 type QuerySetHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type QuerySet(handle : QuerySetHandle) =
+type QuerySet(device : Device, handle : QuerySetHandle) =
     member x.Handle : QuerySetHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuQuerySetReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuQuerySetRelease(handle)
     member x.Destroy() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuQuerySetDestroy(handle)
 type QueueHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Queue(handle : QueueHandle) =
+type Queue(device : Device, handle : QueueHandle) =
     member x.Handle : QueueHandle = handle
-    member x.Submit(CommandCount, Commands : CommandBuffer[]) : unit =
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuQueueReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuQueueRelease(handle)
+    member x.Submit(Commands : CommandBuffer[]) : unit =
+        let device = device
         let handle = handle
         let _Commands = Commands |> Array.map (fun s -> s.Handle)
         use _Commands = fixed _Commands
-        DawnRaw.wgpuQueueSubmit(handle, CommandCount, _Commands)
+        DawnRaw.wgpuQueueSubmit(handle, (if isNull Commands then 0u else uint32 Commands.Length), _Commands)
     member x.Signal(Fence : Fence, SignalValue) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuQueueSignal(handle, Fence.Handle, SignalValue)
     member x.CreateFence(Descriptor : FenceDescriptor) : Fence =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            Fence(DawnRaw.wgpuQueueCreateFence(handle, _Descriptor))
+            Fence(device, DawnRaw.wgpuQueueCreateFence(handle, _Descriptor))
         )
-    member x.WriteBuffer(Buffer : Buffer, BufferOffset, Data : nativeint, Size) : unit =
+    member x.WriteBuffer(Buffer : Buffer, BufferOffset, Data, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuQueueWriteBuffer(handle, Buffer.Handle, BufferOffset, Data, Size)
-    member x.WriteTexture(Destination : TextureCopyView[], Data : nativeint, DataSize, DataLayout : TextureDataLayout[], WriteSize : Extent3D[]) : unit =
+    member x.WriteTexture(Destination : TextureCopyView, Data, DataSize, DataLayout : TextureDataLayout, WriteSize : Extent3D) : unit =
+        let device = device
         let handle = handle
-        let rec pinWriteSize (a : array<Extent3D>) (p : array<_>) (i : int) =
-            if i >= a.Length then
-                use _WriteSize = fixed p
-                let rec pinDataLayout (a : array<TextureDataLayout>) (p : array<_>) (i : int) =
-                    if i >= a.Length then
-                        use _DataLayout = fixed p
-                        let rec pinDestination (a : array<TextureCopyView>) (p : array<_>) (i : int) =
-                            if i >= a.Length then
-                                use _Destination = fixed p
-                                DawnRaw.wgpuQueueWriteTexture(handle, _Destination, Data, DataSize, _DataLayout, _WriteSize)
-                            else
-                                a.[i].Pin(fun ai -> p.[i] <- ai; pinDestination a p (i+1))
-                        pinDestination Destination (Array.zeroCreate Destination.Length) 0
-                    else
-                        a.[i].Pin(fun ai -> p.[i] <- ai; pinDataLayout a p (i+1))
-                pinDataLayout DataLayout (Array.zeroCreate DataLayout.Length) 0
-            else
-                a.[i].Pin(fun ai -> p.[i] <- ai; pinWriteSize a p (i+1))
-        pinWriteSize WriteSize (Array.zeroCreate WriteSize.Length) 0
+        Destination.Pin(fun _Destination ->
+            use _Destination = fixed [| _Destination |]
+            DataLayout.Pin(fun _DataLayout ->
+                use _DataLayout = fixed [| _DataLayout |]
+                WriteSize.Pin(fun _WriteSize ->
+                    use _WriteSize = fixed [| _WriteSize |]
+                    DawnRaw.wgpuQueueWriteTexture(handle, _Destination, Data, DataSize, _DataLayout, _WriteSize)
+                )
+            )
+        )
 type RenderBundleHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type RenderBundle(handle : RenderBundleHandle) =
+type RenderBundle(device : Device, handle : RenderBundleHandle) =
     member x.Handle : RenderBundleHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderBundleReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderBundleRelease(handle)
 type RenderBundleEncoderHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type RenderBundleEncoder(handle : RenderBundleEncoderHandle) =
+type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle) =
     member x.Handle : RenderBundleEncoderHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderBundleEncoderReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderBundleEncoderRelease(handle)
     member x.SetPipeline(Pipeline : RenderPipeline) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderSetPipeline(handle, Pipeline.Handle)
-    member x.SetBindGroup(GroupIndex, Group : BindGroup, DynamicOffsetCount, DynamicOffsets : uint32[]) : unit =
+    member x.SetBindGroup(GroupIndex, Group : BindGroup, DynamicOffsets : uint32[]) : unit =
+        let device = device
         let handle = handle
         use _DynamicOffsets = fixed DynamicOffsets
-        DawnRaw.wgpuRenderBundleEncoderSetBindGroup(handle, GroupIndex, Group.Handle, DynamicOffsetCount, _DynamicOffsets)
+        DawnRaw.wgpuRenderBundleEncoderSetBindGroup(handle, GroupIndex, Group.Handle, (if isNull DynamicOffsets then 0u else uint32 DynamicOffsets.Length), _DynamicOffsets)
     member x.Draw(VertexCount, InstanceCount, FirstVertex, FirstInstance) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderDraw(handle, VertexCount, InstanceCount, FirstVertex, FirstInstance)
     member x.DrawIndexed(IndexCount, InstanceCount, FirstIndex, BaseVertex, FirstInstance) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderDrawIndexed(handle, IndexCount, InstanceCount, FirstIndex, BaseVertex, FirstInstance)
     member x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderDrawIndirect(handle, IndirectBuffer.Handle, IndirectOffset)
     member x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderDrawIndexedIndirect(handle, IndirectBuffer.Handle, IndirectOffset)
-    member x.InsertDebugMarker(MarkerLabel : byte[]) : unit =
+    member x.InsertDebugMarker(MarkerLabel) : unit =
+        let device = device
         let handle = handle
-        use _MarkerLabel = fixed MarkerLabel
-        DawnRaw.wgpuRenderBundleEncoderInsertDebugMarker(handle, _MarkerLabel)
+        DawnRaw.wgpuRenderBundleEncoderInsertDebugMarker(handle, MarkerLabel)
     member x.PopDebugGroup() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : byte[]) : unit =
+    member x.PushDebugGroup(GroupLabel) : unit =
+        let device = device
         let handle = handle
-        use _GroupLabel = fixed GroupLabel
-        DawnRaw.wgpuRenderBundleEncoderPushDebugGroup(handle, _GroupLabel)
+        DawnRaw.wgpuRenderBundleEncoderPushDebugGroup(handle, GroupLabel)
     member x.SetVertexBuffer(Slot, Buffer : Buffer, Offset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(handle, Slot, Buffer.Handle, Offset, Size)
     member x.SetIndexBuffer(Buffer : Buffer, Offset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(handle, Buffer.Handle, Offset, Size)
     member x.SetIndexBufferWithFormat(Buffer : Buffer, Format, Offset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(handle, Buffer.Handle, Format, Offset, Size)
     member x.Finish(Descriptor : RenderBundleDescriptor) : RenderBundle =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            RenderBundle(DawnRaw.wgpuRenderBundleEncoderFinish(handle, _Descriptor))
+            RenderBundle(device, DawnRaw.wgpuRenderBundleEncoderFinish(handle, _Descriptor))
         )
 type RenderPassEncoderHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type RenderPassEncoder(handle : RenderPassEncoderHandle) =
+type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle) =
     member x.Handle : RenderPassEncoderHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderPassEncoderReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderPassEncoderRelease(handle)
     member x.SetPipeline(Pipeline : RenderPipeline) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetPipeline(handle, Pipeline.Handle)
-    member x.SetBindGroup(GroupIndex, Group : BindGroup, DynamicOffsetCount, DynamicOffsets : uint32[]) : unit =
+    member x.SetBindGroup(GroupIndex, Group : BindGroup, DynamicOffsets : uint32[]) : unit =
+        let device = device
         let handle = handle
         use _DynamicOffsets = fixed DynamicOffsets
-        DawnRaw.wgpuRenderPassEncoderSetBindGroup(handle, GroupIndex, Group.Handle, DynamicOffsetCount, _DynamicOffsets)
+        DawnRaw.wgpuRenderPassEncoderSetBindGroup(handle, GroupIndex, Group.Handle, (if isNull DynamicOffsets then 0u else uint32 DynamicOffsets.Length), _DynamicOffsets)
     member x.Draw(VertexCount, InstanceCount, FirstVertex, FirstInstance) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderDraw(handle, VertexCount, InstanceCount, FirstVertex, FirstInstance)
     member x.DrawIndexed(IndexCount, InstanceCount, FirstIndex, BaseVertex, FirstInstance) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderDrawIndexed(handle, IndexCount, InstanceCount, FirstIndex, BaseVertex, FirstInstance)
     member x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderDrawIndirect(handle, IndirectBuffer.Handle, IndirectOffset)
     member x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderDrawIndexedIndirect(handle, IndirectBuffer.Handle, IndirectOffset)
-    member x.ExecuteBundles(BundlesCount, Bundles : RenderBundle[]) : unit =
+    member x.ExecuteBundles(Bundles : RenderBundle[]) : unit =
+        let device = device
         let handle = handle
         let _Bundles = Bundles |> Array.map (fun s -> s.Handle)
         use _Bundles = fixed _Bundles
-        DawnRaw.wgpuRenderPassEncoderExecuteBundles(handle, BundlesCount, _Bundles)
-    member x.InsertDebugMarker(MarkerLabel : byte[]) : unit =
+        DawnRaw.wgpuRenderPassEncoderExecuteBundles(handle, (if isNull Bundles then 0u else uint32 Bundles.Length), _Bundles)
+    member x.InsertDebugMarker(MarkerLabel) : unit =
+        let device = device
         let handle = handle
-        use _MarkerLabel = fixed MarkerLabel
-        DawnRaw.wgpuRenderPassEncoderInsertDebugMarker(handle, _MarkerLabel)
+        DawnRaw.wgpuRenderPassEncoderInsertDebugMarker(handle, MarkerLabel)
     member x.PopDebugGroup() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : byte[]) : unit =
+    member x.PushDebugGroup(GroupLabel) : unit =
+        let device = device
         let handle = handle
-        use _GroupLabel = fixed GroupLabel
-        DawnRaw.wgpuRenderPassEncoderPushDebugGroup(handle, _GroupLabel)
+        DawnRaw.wgpuRenderPassEncoderPushDebugGroup(handle, GroupLabel)
     member x.SetStencilReference(Reference) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetStencilReference(handle, Reference)
-    member x.SetBlendColor(Color : Color[]) : unit =
+    member x.SetBlendColor(Color : Color) : unit =
+        let device = device
         let handle = handle
-        let rec pinColor (a : array<Color>) (p : array<_>) (i : int) =
-            if i >= a.Length then
-                use _Color = fixed p
-                DawnRaw.wgpuRenderPassEncoderSetBlendColor(handle, _Color)
-            else
-                a.[i].Pin(fun ai -> p.[i] <- ai; pinColor a p (i+1))
-        pinColor Color (Array.zeroCreate Color.Length) 0
+        Color.Pin(fun _Color ->
+            use _Color = fixed [| _Color |]
+            DawnRaw.wgpuRenderPassEncoderSetBlendColor(handle, _Color)
+        )
     member x.SetViewport(X, Y, Width, Height, MinDepth, MaxDepth) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetViewport(handle, X, Y, Width, Height, MinDepth, MaxDepth)
     member x.SetScissorRect(X, Y, Width, Height) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetScissorRect(handle, X, Y, Width, Height)
     member x.SetVertexBuffer(Slot, Buffer : Buffer, Offset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(handle, Slot, Buffer.Handle, Offset, Size)
     member x.SetIndexBuffer(Buffer : Buffer, Offset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(handle, Buffer.Handle, Offset, Size)
     member x.SetIndexBufferWithFormat(Buffer : Buffer, Format, Offset, Size) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(handle, Buffer.Handle, Format, Offset, Size)
     member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderWriteTimestamp(handle, QuerySet.Handle, QueryIndex)
     member x.EndPass() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuRenderPassEncoderEndPass(handle)
 type RenderPipelineHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type RenderPipeline(handle : RenderPipelineHandle) =
+type RenderPipeline(device : Device, handle : RenderPipelineHandle) =
     member x.Handle : RenderPipelineHandle = handle
-    member x.GetBindGroupLayout(GroupIndex) : BindGroupLayout =
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
         let handle = handle
-        BindGroupLayout(DawnRaw.wgpuRenderPipelineGetBindGroupLayout(handle, GroupIndex))
+        DawnRaw.wgpuRenderPipelineReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuRenderPipelineRelease(handle)
+    member x.GetBindGroupLayout(GroupIndex) : BindGroupLayout =
+        let device = device
+        let handle = handle
+        BindGroupLayout(device, DawnRaw.wgpuRenderPipelineGetBindGroupLayout(handle, GroupIndex))
 type SamplerHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Sampler(handle : SamplerHandle) =
+type Sampler(device : Device, handle : SamplerHandle) =
     member x.Handle : SamplerHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuSamplerReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuSamplerRelease(handle)
 type ShaderModuleHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type ShaderModule(handle : ShaderModuleHandle) =
+type ShaderModule(device : Device, handle : ShaderModuleHandle) =
     member x.Handle : ShaderModuleHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuShaderModuleReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuShaderModuleRelease(handle)
 type SurfaceHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Surface(handle : SurfaceHandle) =
+type Surface(device : Device, handle : SurfaceHandle) =
     member x.Handle : SurfaceHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuSurfaceReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuSurfaceRelease(handle)
 type SwapChainHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type SwapChain(handle : SwapChainHandle) =
+type SwapChain(device : Device, handle : SwapChainHandle) =
     member x.Handle : SwapChainHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuSwapChainReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuSwapChainRelease(handle)
     member x.Configure(Format, AllowedUsage, Width, Height) : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuSwapChainConfigure(handle, Format, AllowedUsage, Width, Height)
     member x.GetCurrentTextureView() : TextureView =
+        let device = device
         let handle = handle
-        TextureView(DawnRaw.wgpuSwapChainGetCurrentTextureView(handle))
+        TextureView(device, DawnRaw.wgpuSwapChainGetCurrentTextureView(handle))
     member x.Present() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuSwapChainPresent(handle)
 type TextureHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type Texture(handle : TextureHandle) =
+type Texture(device : Device, handle : TextureHandle) =
     member x.Handle : TextureHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuTextureReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuTextureRelease(handle)
     member x.CreateView(Descriptor : TextureViewDescriptor) : TextureView =
+        let device = device
         let handle = handle
         Descriptor.Pin(fun _Descriptor ->
             use _Descriptor = fixed [| _Descriptor |]
-            TextureView(DawnRaw.wgpuTextureCreateView(handle, _Descriptor))
+            TextureView(device, DawnRaw.wgpuTextureCreateView(handle, _Descriptor))
         )
     member x.Destroy() : unit =
+        let device = device
         let handle = handle
         DawnRaw.wgpuTextureDestroy(handle)
 type TextureViewHandle = struct val mutable public Handle : nativeint end
 [<Struct>]
-type TextureView(handle : TextureViewHandle) =
+type TextureView(device : Device, handle : TextureViewHandle) =
     member x.Handle : TextureViewHandle = handle
+    member x.Device : Device = device
+    member x.Reference() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuTextureViewReference(handle)
+    member x.Release() : unit =
+        let device = device
+        let handle = handle
+        DawnRaw.wgpuTextureViewRelease(handle)

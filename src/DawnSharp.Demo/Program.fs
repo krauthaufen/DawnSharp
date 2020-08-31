@@ -146,106 +146,152 @@ type Instance() =
             new Adapter(h)
         )
 
+        
+open System.Threading
+
+exception QueueWaitFailed of status : FenceCompletionStatus
+exception BufferMapFailed of status : BufferMapAsyncStatus
 
 type Buffer with
-    member x.Map(mode, offset, size, d : Device) =
-        Async.FromContinuations (fun (s,e,c) ->
-            x.MapAsync(mode, offset, size, BufferMapCallback(fun status _ ->
-                match status with
-                | BufferMapAsyncStatus.Success -> 
-                    s (x.GetMappedRange(0un, 0xffffffffffffffffun))
-                | _ ->
-                    
-                    e (Exception "could not map buffer")
-            ), 0n)
-        )
+    member x.Map(mode, offset, size) =
+        let mutable res = Int32.MaxValue
+        let mutable mapPointer = 0n
+        x.MapAsync(mode, offset, size, BufferMapCallback(fun status _ ->
+            match status with
+            | BufferMapAsyncStatus.Success ->   
+                let ptr = x.GetConstMappedRange(offset, size)
+                mapPointer <- ptr
+                res <- int BufferMapAsyncStatus.Success
+            | _ ->
+                res <- int status
+        ), 0n)
+
+        while Volatile.Read(&res) = Int32.MaxValue do
+            x.Device.Tick()
+        match Volatile.Read(&res) |> unbox<BufferMapAsyncStatus> with
+        | BufferMapAsyncStatus.Success ->
+            mapPointer
+        | err ->
+            raise <| BufferMapFailed err
 
 type Queue with
-    member x.Wait(d : Device) =
-        Async.FromContinuations(fun (s, e, c) ->
-            let f = x.CreateFence { Label = null; InitialValue = 0UL }
-            x.Signal(f, 1UL)
-            f.OnCompletion(1UL, FenceOnCompletionCallback(fun status _ ->
-                
-                s status
-            ), 0n)
+    member x.Wait() =
+        let mutable res = Int32.MaxValue
+        let f = x.CreateFence { Label = null; InitialValue = 0UL }
+        x.Signal(f, 1UL)
+        f.OnCompletion(1UL, FenceOnCompletionCallback(fun status _ ->
+            Volatile.Write(&res, int status)
+        ), 0n)
+        let mutable iter = 0
+        while Volatile.Read(&res) = Int32.MaxValue do    
+            x.Device.Tick()
+            iter <- iter + 1
+        let status = Volatile.Read(&res) |> unbox<FenceCompletionStatus>
+        f.Release()
 
-        )
+        if status <> FenceCompletionStatus.Success then raise <| QueueWaitFailed status
+
 
 let run(device : Device) =
-
-    let thread =
-        System.Threading.Thread(System.Threading.ThreadStart(fun () ->
-            while true do
-                device.Tick()
-        ), IsBackground = true)
-    thread.SetApartmentState(Threading.ApartmentState.STA)
-    thread.Start()
-
-    async {
-        let src = 
-            device.CreateBuffer {
-                Label = "a"
-                Size = 4096UL    
-                Usage = BufferUsage.MapWrite ||| BufferUsage.CopySrc
-                MappedAtCreation = 1
-            }
-            
-
-        let dst =
-            device.CreateBuffer {
-                Label = "b"
-                Size = 4096UL    
-                Usage = BufferUsage.MapRead ||| BufferUsage.CopyDst
-                MappedAtCreation = 0
-            }
-            
-
-        let ptr = src.GetMappedRange(0un, 4096un) 
-        Marshal.Copy(Array.init 4096 byte, 0, ptr, 4096)
-        src.Unmap()
-
-        let q = device.GetDefaultQueue()
-        let buf = 
-            let cmd = device.CreateCommandEncoder { Label = null }
-            cmd.CopyBufferToBuffer(src, 0UL, dst, 0UL, 4096UL)
-            cmd.Finish { Label = "buffy" }
-
-        q.Submit(1u, [| buf |])
+    let size = 32 <<< 20
+    let src = 
+        device.CreateBuffer {
+            Label = "a"
+            Size = uint64 size    
+            Usage = BufferUsage.MapWrite ||| BufferUsage.CopySrc
+            MappedAtCreation = 1
+        }
         
-        let! r = q.Wait(device)
-        printfn "done: %A" r
+    let real = 
+        device.CreateBuffer {
+            Label = "r"
+            Size = uint64 size        
+            Usage = BufferUsage.Vertex ||| BufferUsage.CopyDst ||| BufferUsage.CopySrc
+            MappedAtCreation = 0
+        }
 
-        let! ptr = dst.Map(MapMode.Read, 0un, 4096un, device)
-        let arr : byte[] = Array.zeroCreate 4096
-        Marshal.Copy(ptr, arr, 0, arr.Length)
-        dst.Unmap()
+    let dst =
+        device.CreateBuffer {
+            Label = "b"
+            Size = uint64 size        
+            Usage = BufferUsage.MapRead ||| BufferUsage.CopyDst
+            MappedAtCreation = 0
+        }
+            
+    let input = Array.init size byte
+    let ptr = src.GetMappedRange(0un, unativeint size) 
+    Marshal.Copy(input, 0, ptr, size)
+    src.Unmap()
 
-        printfn "%A" arr
 
-        dst.Destroy()
-        src.Destroy()
-    }
+    let q = device.GetDefaultQueue()
+    let buf = 
+        let cmd = device.CreateCommandEncoder { Label = null }
+        cmd.CopyBufferToBuffer(src, 0UL, real, 0UL, uint64 size)
+        cmd.CopyBufferToBuffer(real, 0UL, dst, 0UL, uint64 size)
+
+        //cmd.CopyBufferToTexture(
+        //    { 
+        //        Buffer = src
+        //        Layout = { Offset = 0UL; BytesPerRow = 4096u; RowsPerImage = 1024u } 
+        //    },
+        //    { 
+        //        Texture = failwith ""
+        //        MipLevel = 0u; Origin = { X = 0u; Y = 0u; Z = 0u }; Aspect = TextureAspect.All 
+        //    },
+        //    { Width = 1024u; Height = 1024u; Depth = 1u }
+        //)
+
+        cmd.Finish { Label = null }
+
+    q.Submit [| buf |]
+    buf.Release()
+    q.Wait()
 
 
-[<EntryPoint; STAThread>]
+    let ptr = dst.Map(MapMode.Read, 0un, unativeint size)
+    let arr : byte[] = Array.zeroCreate size
+    Marshal.Copy(ptr, arr, 0, arr.Length)
+    dst.Unmap()
+
+    if arr = input then printfn "success"
+    else printfn "error"
+
+
+    dst.Destroy()
+    src.Destroy()
+    real.Destroy()
+    src.Release()
+    dst.Release()
+    real.Release()
+
+
+[<EntryPoint>]
 let main argv =
     let instance = Instance()
-
     let adapters = instance.GetDefaultAdapters()
 
+    //for a in adapters do
+    //    printfn "%s" a.Name
+    //    printfn "  %A" a.BackendType
+    //    printfn "  %A" a.DeviceType
 
-    for a in adapters do
-        printfn "%s" a.Name
-        printfn "  %A" a.BackendType
-        printfn "  %A" a.DeviceType
+    for a in [| adapters.[1] |] do
+        match a.BackendType with
+        | BackendType.Null -> 
+            printfn "%s" a.Name
+        | _ -> 
+            let dev = a.CreateDevice()
+            dev.SetUncapturedErrorCallback(ErrorCallback(fun err str _ -> 
+                let message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi (NativePtr.toNativeInt str)
+                printfn "%A: %s" err message
+            ), 0n)
+            |> ignore
+            printfn "%s (%A) " a.Name a.BackendType
 
-    let dev = adapters.[2].CreateDevice()
-    dev.SetUncapturedErrorCallback(ErrorCallback(fun err str _ -> 
-        let message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi (NativePtr.toNativeInt str)
-        printfn "%A: %s" err message
-    ), 0n)
-    |> ignore
-    run dev |> Async.RunSynchronously
 
+            for i in 1 .. 10 do
+                printf "  %d " i
+                run dev
+    
     0 // return an integer exit code
