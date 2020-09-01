@@ -5,15 +5,41 @@
 #include "framework.h"
 
 #include <dawn/webgpu.h>
+#include <dawn/dawn_wsi.h>
 #include <dawn_native/DawnNative.h>
 #include <dawn/dawn_proc.h>
+#include <GLFWUtils.h>
+#include <BackendBinding.h>
+
+
+extern "C" utils::BackendBinding* dawnCreateBackendBinding(wgpu::BackendType backendType, GLFWwindow* window, WGPUDevice device)
+{	
+	auto binding = utils::CreateBinding(backendType, window, device);
+	return binding;
+}
+
+extern "C" int dawnGetPreferredSwapChainTextureFormat(utils::BackendBinding * binding)
+{
+	return (int)binding->GetPreferredSwapChainTextureFormat();
+}
+
+extern "C" uint64_t dawnGetSwapChainImplementation(utils::BackendBinding * binding)
+{
+	return binding->GetSwapChainImplementation();
+}
+
+extern "C" void dawnDestroyBackendBinding(utils::BackendBinding * ptr)
+{
+	if (!ptr)return;
+	delete ptr;
+}
+
 
 extern "C" dawn_native::Instance* dawnNewInstance()
 {
 	auto inst = new dawn_native::Instance();
 
-	DawnProcTable backendProcs = dawn_native::GetProcs();
-	dawnProcSetProcs(&backendProcs);
+	
 	return inst;
 
 }
@@ -23,6 +49,41 @@ extern "C" void dawnDestroyInstance(dawn_native::Instance* instance)
 	if (!instance) return;
 	delete instance;
 }
+
+extern "C" void dawnEnableBackendValidation(dawn_native::Instance * instance, int validate)
+{
+	instance->EnableBackendValidation(validate);
+}
+
+extern "C" void dawnEnableBeginCaptureOnStartup(dawn_native::Instance * instance, int beginCaptureOnStartup)
+{
+	instance->EnableBeginCaptureOnStartup(beginCaptureOnStartup);
+}
+
+extern "C" void dawnEnableGPUBasedBackendValidation(dawn_native::Instance * instance, int enableGPUBasedBackendValidation)
+{
+	instance->EnableGPUBasedBackendValidation(enableGPUBasedBackendValidation);
+}
+
+extern "C" const dawn_native::ToggleInfo* dawnGetToggleInfo(dawn_native::Instance * instance, const char* toggleName)
+{
+	return instance->GetToggleInfo(toggleName);
+}
+
+extern "C" int dawnGetSupportedExtensions(dawn_native::Adapter * adapter, int bufSize, const char** extNames)
+{
+	auto exts = adapter->GetSupportedExtensions();
+	if (!extNames) return (int)exts.size();
+
+	auto cnt = std::min(bufSize, (int)exts.size());
+	for (int i = 0; i < cnt; i++)
+	{
+		extNames[i] = exts[i];
+	}
+
+	return cnt;
+}
+
 
 extern "C" int dawnDiscoverDefaultAdapters(dawn_native::Instance* instance, int bufSize, dawn_native::Adapter** adapters)
 {
@@ -90,9 +151,40 @@ extern "C" void dawnFreeAdapterInfo(DawnAdapterInfo info)
 	delete info.name;
 }
 
-extern "C" WGPUDevice dawnCreateDevice(dawn_native::Adapter * adapter)
+extern "C" WGPUDevice dawnCreateDevice(dawn_native::Adapter * adapter, int extCount, const char** exts, int enabledCount, const char** enabled, int disabledCount, const char** disabled)
 {
-	return adapter->CreateDevice();
+	if (extCount > 0 || enabledCount > 0 || disabledCount > 0)
+	{
+		dawn_native::DeviceDescriptor desc;
+		desc.requiredExtensions = std::vector<const char*>();
+		desc.forceEnabledToggles = std::vector<const char*>();
+		desc.forceDisabledToggles = std::vector<const char*>();
+
+		for (int i = 0; i < extCount; i++)
+		{
+			desc.requiredExtensions.push_back(exts[i]);
+		}
+
+		for (int i = 0; i < enabledCount; i++)
+		{
+			desc.forceEnabledToggles.push_back(enabled[i]);
+		}
+
+		for (int i = 0; i < disabledCount; i++)
+		{
+			desc.forceDisabledToggles.push_back(disabled[i]);
+		}
+		auto dev = adapter->CreateDevice(&desc);
+		DawnProcTable backendProcs = dawn_native::GetProcs();
+		dawnProcSetProcs(&backendProcs);
+		return dev;
+	}
+	else {
+		auto dev = adapter->CreateDevice();
+		DawnProcTable backendProcs = dawn_native::GetProcs();
+		dawnProcSetProcs(&backendProcs);
+		return dev;
+	}
 }
 
 

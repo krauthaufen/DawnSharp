@@ -1,5 +1,6 @@
 ﻿// Learn more about F# at http://fsharp.org
 
+open Aardvark.Base
 open System
 open WebGPU
 open Microsoft.FSharp.NativeInterop
@@ -8,6 +9,7 @@ open System.Runtime.InteropServices
 #nowarn "9"
 
 type AdapterHandle = struct val mutable public Handle : nativeint end
+type BackendBindingHandle = struct val mutable public Handle : nativeint end
 
 type DeviceType =
     | Discrete = 0
@@ -26,9 +28,16 @@ type AdapterInfo =
         DeviceType : DeviceType
         DeviceId : uint32
         VendorId : uint32
+        Vendor : option<string>
         Name : string
     }
 
+type ToggleInfo =
+    {
+        Name : string
+        Description : string
+        Url : string
+    }
 
 module DawnRaw =
     open System.Runtime.InteropServices
@@ -54,8 +63,14 @@ module DawnRaw =
             val mutable public VendorId : uint32
             val mutable public Name : nativeint
         end
-        
 
+    type DawnToggleInfo =
+        struct
+            val mutable public Name : nativeint
+            val mutable public Description : nativeint
+            val mutable public Url : nativeint
+        end
+        
     module AdapterInfo =
         open System.Runtime.InteropServices
 
@@ -70,6 +85,49 @@ module DawnRaw =
                 | DawnBackendType.Vulkan -> BackendType.Vulkan
                 | _ -> BackendType.Null
 
+            let vendorName =
+                PCI.tryGetVendorName info.VendorId
+
+            let name = Marshal.PtrToStringAnsi info.Name
+            
+            let name =
+                match vendorName with
+                | Some vendor ->
+                    let vendor = vendor.Trim()
+                    let replacements =
+                        [
+                            yield vendor
+                            if vendor.ToLower().EndsWith "corporation" then yield vendor.Substring(0, vendor.Length - 11).Trim()
+                            if vendor.ToLower().EndsWith "corp" then yield vendor.Substring(0, vendor.Length - 4).Trim()
+                            if vendor.ToLower().EndsWith "corp." then yield vendor.Substring(0, vendor.Length - 5).Trim()
+                            if vendor.ToLower().EndsWith "inc" then yield vendor.Substring(0, vendor.Length - 3).Trim()
+                            if vendor.ToLower().EndsWith "inc." then yield vendor.Substring(0, vendor.Length - 4).Trim()
+                        ]
+
+                    let mutable name = name.Trim()
+                    for repl in replacements do
+                        let idx = name.ToLower().IndexOf(repl.ToLower())
+                        if idx >= 0 then
+                            let str = name.Substring(0, idx) + " " + name.Substring(idx + repl.Length)
+                            name <- str.Trim()
+
+                    if name.ToLower().StartsWith "(r)" || name.ToLower().StartsWith "(c)" then name <- name.Substring(3).Trim()
+
+                    name
+                | None ->
+                    name.Trim()
+            
+            let vendorName =
+                vendorName |> Option.map (fun vendor ->
+                    let mutable vendor = vendor
+                    if vendor.ToLower().EndsWith "corporation" then vendor <- vendor.Substring(0, vendor.Length - 11).Trim()
+                    if vendor.ToLower().EndsWith "corp" then vendor <- vendor.Substring(0, vendor.Length - 4).Trim()
+                    if vendor.ToLower().EndsWith "corp." then vendor <- vendor.Substring(0, vendor.Length - 5).Trim()
+                    if vendor.ToLower().EndsWith "inc" then vendor <- vendor.Substring(0, vendor.Length - 3).Trim()
+                    if vendor.ToLower().EndsWith "inc." then vendor <- vendor.Substring(0, vendor.Length - 4).Trim()
+                    vendor
+                )
+            
             {
                 PipelineStatisticsQuery = info.PipelineStatisticsQuery <> 0
                 ShaderFloat16 = info.ShaderFloat16 <> 0
@@ -79,14 +137,44 @@ module DawnRaw =
                 DeviceType = info.DeviceType
                 DeviceId = info.DeviceId
                 VendorId = info.VendorId
-                Name = Marshal.PtrToStringAnsi info.Name
+                Vendor = vendorName
+                Name = name
             }
         
-
-
     [<DllImport("dawn")>]
     extern InstanceHandle dawnNewInstance()
     
+    [<DllImport("dawn")>]
+    extern void dawnDestroyInstance(InstanceHandle instance)
+    
+    [<DllImport("dawn")>]
+    extern BackendBindingHandle dawnCreateBackendBinding(BackendType backendType, nativeint glfwWindow, DeviceHandle device)
+
+    [<DllImport("dawn")>]
+    extern TextureFormat dawnGetPreferredSwapChainTextureFormat(BackendBindingHandle handle)
+    
+    [<DllImport("dawn")>]
+    extern uint64 dawnGetSwapChainImplementation(BackendBindingHandle handle)
+    
+    [<DllImport("dawn")>]
+    extern void dawnDestroyBackendBinding(BackendBindingHandle handle)
+
+
+    [<DllImport("dawn")>]
+    extern void dawnEnableBackendValidation(InstanceHandle instance, int validate)
+    
+    [<DllImport("dawn")>]
+    extern void dawnEnableBeginCaptureOnStartup(InstanceHandle instance, int beginCaptureOnStartup)
+    
+    [<DllImport("dawn")>]
+    extern void dawnEnableGPUBasedBackendValidation(InstanceHandle instance, int enableGPUBasedBackendValidation)
+    
+    [<DllImport("dawn")>]
+    extern DawnToggleInfo* dawnGetToggleInfo(InstanceHandle instance, nativeint name)
+    
+    [<DllImport("dawn")>]
+    extern int dawnGetSupportedExtensions(AdapterHandle instance, int bufSize, nativeint* extNames)
+
     [<DllImport("dawn")>]
     extern int dawnDiscoverDefaultAdapters(InstanceHandle instance, int bufSize, AdapterHandle* adapters)
     
@@ -97,7 +185,7 @@ module DawnRaw =
     extern void dawnFreeAdapterInfo(DawnAdapterInfo handle)
     
     [<DllImport("dawn")>]
-    extern DeviceHandle dawnCreateDevice(AdapterHandle handle)
+    extern DeviceHandle dawnCreateDevice(AdapterHandle handle, int extCount, nativeint* exts, int enabledCount, nativeint* enabled, int disabledCount, nativeint* disabled)
     
     [<DllImport("dawn")>]
     extern void dawnFreeAdapter(AdapterHandle handle)
@@ -110,17 +198,52 @@ type Adapter(handle : AdapterHandle) =
             DawnRaw.dawnFreeAdapterInfo info
             res
         )
+
+    let extensions =
+        lazy (
+            let cnt = DawnRaw.dawnGetSupportedExtensions(handle, 0, NativePtr.ofNativeInt 0n)
+            let arr = Array.zeroCreate cnt
+            use ptr = fixed arr
+            let cnt = DawnRaw.dawnGetSupportedExtensions(handle, cnt, ptr)
+
+            arr |> Array.map (fun ptr ->
+                Marshal.PtrToStringAnsi ptr
+            )
+
+        )
     
     member x.Handle = handle
     member x.Info = info.Value
+    
+    member x.VendorId = x.Info.VendorId
+    member x.DeviceId = x.Info.DeviceId
+    member x.Vendor = 
+        match x.Info.Vendor with
+        | Some v -> v
+        | None -> 
+            match x.Info.VendorId with
+            | 0u -> "NULL"
+            | _ -> sprintf "PCI%08X" x.Info.VendorId
 
     member x.Name = x.Info.Name
     member x.DeviceType = x.Info.DeviceType
     member x.BackendType = x.Info.BackendType
+    member x.Extensions = extensions.Value
 
-    member x.CreateDevice() =
-        let dh = DawnRaw.dawnCreateDevice(handle)
-        Device(dh)
+    member x.CreateDevice(?extensions : string[], ?enabledToggles : string[], ?disabledToggles : string[]) =
+        let extensions = defaultArg extensions [||] |> Array.map Marshal.StringToHGlobalAnsi
+        let enabledToggles = defaultArg enabledToggles [||] |> Array.map Marshal.StringToHGlobalAnsi
+        let disabledToggles = defaultArg disabledToggles [||] |> Array.map Marshal.StringToHGlobalAnsi
+        try
+            use pExt = fixed extensions
+            use pEn = fixed enabledToggles
+            use pDis = fixed disabledToggles
+            let dh = DawnRaw.dawnCreateDevice(handle, extensions.Length, pExt, enabledToggles.Length, pEn, disabledToggles.Length, pDis)
+            Device(dh)
+        finally
+            extensions |> Array.iter Marshal.FreeHGlobal
+            enabledToggles |> Array.iter Marshal.FreeHGlobal
+            disabledToggles |> Array.iter Marshal.FreeHGlobal
 
     member private x.Dispose(disposing : bool) =
         if disposing then GC.SuppressFinalize x
@@ -136,6 +259,15 @@ type Instance() =
 
     member x.Handle = handle
 
+    member x.EnableBackendValidation(validation : bool) =
+        DawnRaw.dawnEnableBackendValidation(handle, if validation then 1 else 0)
+        
+    member x.EnableBeginCaptureOnStartup(captureOnStartup : bool) =
+        DawnRaw.dawnEnableBeginCaptureOnStartup(handle, if captureOnStartup then 1 else 0)
+
+    member x.EnableGPUBasedBackendValidation(validation : bool) =
+        DawnRaw.dawnEnableGPUBasedBackendValidation(handle, if validation then 1 else 0)
+
     member x.GetDefaultAdapters() =
         let arr = Array.zeroCreate 128
         use ptr = fixed arr
@@ -146,7 +278,23 @@ type Instance() =
             new Adapter(h)
         )
 
+type BackendBinding(device : Device, handle : BackendBindingHandle) =
+    member x.Device = device
+    member x.Handle = handle
+
+    member x.GetSwapChainImplementation() =
+        DawnRaw.dawnGetSwapChainImplementation(handle)
         
+    member x.GetPreferredSwapChainTextureFormat() =
+        DawnRaw.dawnGetPreferredSwapChainTextureFormat(handle)
+
+    member x.Destroy() =
+        DawnRaw.dawnDestroyBackendBinding(handle)
+
+type Device with
+    member x.CreateBackendBinding(backendType : BackendType, glfwWindow : nativeint) =
+        BackendBinding(x, DawnRaw.dawnCreateBackendBinding(backendType, glfwWindow, x.Handle))
+
 open System.Threading
 
 exception QueueWaitFailed of status : FenceCompletionStatus
@@ -156,7 +304,7 @@ type Buffer with
     member x.Map(mode, offset, size) =
         let mutable res = Int32.MaxValue
         let mutable mapPointer = 0n
-        x.MapAsync(mode, offset, size, BufferMapCallback(fun status _ ->
+        x.MapAsync(mode, offset, size, fun status _ ->
             match status with
             | BufferMapAsyncStatus.Success ->   
                 let ptr = x.GetConstMappedRange(offset, size)
@@ -164,7 +312,7 @@ type Buffer with
                 res <- int BufferMapAsyncStatus.Success
             | _ ->
                 res <- int status
-        ), 0n)
+        )
 
         while Volatile.Read(&res) = Int32.MaxValue do
             x.Device.Tick()
@@ -179,9 +327,9 @@ type Queue with
         let mutable res = Int32.MaxValue
         let f = x.CreateFence { Label = null; InitialValue = 0UL }
         x.Signal(f, 1UL)
-        f.OnCompletion(1UL, FenceOnCompletionCallback(fun status _ ->
+        f.OnCompletion(1UL, fun status _ ->
             Volatile.Write(&res, int status)
-        ), 0n)
+        )
         let mutable iter = 0
         while Volatile.Read(&res) = Int32.MaxValue do    
             x.Device.Tick()
@@ -191,7 +339,6 @@ type Queue with
 
         if status <> FenceCompletionStatus.Success then raise <| QueueWaitFailed status
 
-
 let run(device : Device) =
     let size = 32 <<< 20
     let src = 
@@ -199,7 +346,7 @@ let run(device : Device) =
             Label = "a"
             Size = uint64 size    
             Usage = BufferUsage.MapWrite ||| BufferUsage.CopySrc
-            MappedAtCreation = 1
+            MappedAtCreation = true
         }
         
     let real = 
@@ -207,7 +354,7 @@ let run(device : Device) =
             Label = "r"
             Size = uint64 size        
             Usage = BufferUsage.Vertex ||| BufferUsage.CopyDst ||| BufferUsage.CopySrc
-            MappedAtCreation = 0
+            MappedAtCreation = false
         }
 
     let dst =
@@ -215,7 +362,7 @@ let run(device : Device) =
             Label = "b"
             Size = uint64 size        
             Usage = BufferUsage.MapRead ||| BufferUsage.CopyDst
-            MappedAtCreation = 0
+            MappedAtCreation = false
         }
             
     let input = Array.init size byte
@@ -223,8 +370,119 @@ let run(device : Device) =
     Marshal.Copy(input, 0, ptr, size)
     src.Unmap()
 
+    let shaderCode =
+        String.concat "\r\n" [
+            "#version 450"
+            "#ifdef Vertex"
+            "layout(location = 0) in vec4 pos;"
+            ""
+            "layout(set = 0, binding = 0)"
+            "uniform MyBuffer {"
+            "    vec4 MyUniform;"
+            "};"
+            ""
+            "void main()"
+            "{"
+            "    gl_Position = MyUniform + pos;"
+            "}"
+            "#endif"
+            ""
+            "#ifdef Fragment"
+            "layout(location = 0) out vec4 color;"
+            "void main()"
+            "{"
+            "    color = vec4(1,1,1,1);"
+            "}"
+            "#endif"
+        ]
 
-    let q = device.GetDefaultQueue()
+    let vertexModule =
+        device.CreateGLSLShaderModule {
+            ShaderStage = ShaderStage.Vertex
+            Label       = "VS"
+            EntryPoint  = "main"
+            Defines     = ["Vertex"]
+            Code        = shaderCode
+        }
+
+    let fragmentModule =
+        device.CreateGLSLShaderModule {
+            ShaderStage = ShaderStage.Fragment
+            Label       = "FS"
+            EntryPoint  = "main"
+            Defines     = ["Fragment"]
+            Code        = shaderCode
+        }
+
+    let pipelineLayout = 
+        device.CreatePipelineLayout {
+            Label = null
+            BindGroupLayouts = [||]
+        }
+
+    let pipeline = 
+        device.CreateRenderPipeline {
+            Label  = "pipy"
+            AlphaToCoverageEnabled = false
+            Layout  = pipelineLayout
+            VertexStage = { Module = vertexModule; EntryPoint = "main" }
+            FragmentStage = [| { Module = fragmentModule; EntryPoint = "main" } |]
+            PrimitiveTopology = PrimitiveTopology.TriangleList
+            SampleCount = 1u
+            SampleMask = 1u
+            RasterizationState =
+                [|
+                    {
+                        FrontFace = FrontFace.CCW
+                        CullMode = CullMode.Back
+                        DepthBias = 0
+                        DepthBiasClamp = 0.0f
+                        DepthBiasSlopeScale = 0.0f
+                    }
+                |]
+
+            VertexState = 
+                [|  
+                    { 
+                        IndexFormat = IndexFormat.Undefined
+                        VertexBuffers = 
+                        [|
+                            { 
+                                StepMode = InputStepMode.Vertex
+                                ArrayStride = 12UL
+                                Attributes =
+                                    [|
+                                        { Format = VertexFormat.Float3; Offset = 0UL; ShaderLocation = 0u }
+                                    |]
+                            }
+                        |]
+                    }
+                |]
+            DepthStencilState =     
+                [|
+                    { 
+                        Format = TextureFormat.Depth24PlusStencil8
+                        DepthWriteEnabled = true
+                        DepthCompare = CompareFunction.LessEqual
+                        StencilFront = { Compare = CompareFunction.Never; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                        StencilBack = { Compare = CompareFunction.Never; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                        StencilReadMask = 0u
+                        StencilWriteMask = 0u
+                    }
+                |]
+            ColorStates = 
+                [|
+                    { 
+                        Format = TextureFormat.RGBA8Unorm 
+                        AlphaBlend = { Operation = BlendOperation.Add; SrcFactor = BlendFactor.One; DstFactor = BlendFactor.Zero }
+                        ColorBlend = { Operation = BlendOperation.Add; SrcFactor = BlendFactor.One; DstFactor = BlendFactor.Zero }
+                        WriteMask = ColorWriteMask.All
+                    }
+                |]
+        }
+
+    
+
     let buf = 
         let cmd = device.CreateCommandEncoder { Label = null }
         cmd.CopyBufferToBuffer(src, 0UL, real, 0UL, uint64 size)
@@ -237,13 +495,16 @@ let run(device : Device) =
         //    },
         //    { 
         //        Texture = failwith ""
-        //        MipLevel = 0u; Origin = { X = 0u; Y = 0u; Z = 0u }; Aspect = TextureAspect.All 
+        //        MipLevel = 0u
+        //        Origin = { X = 0u; Y = 0u; Z = 0u }
+        //        Aspect = TextureAspect.All 
         //    },
         //    { Width = 1024u; Height = 1024u; Depth = 1u }
         //)
 
         cmd.Finish { Label = null }
-
+        
+    let q = device.GetDefaultQueue()
     q.Submit [| buf |]
     buf.Release()
     q.Wait()
@@ -266,32 +527,357 @@ let run(device : Device) =
     real.Release()
 
 
-[<EntryPoint>]
+module PCITable = 
+    open System.IO
+    open System.Text.RegularExpressions
+
+
+    let generate() =
+        use s = File.OpenRead @"C:\Users\Schorsch\Downloads\pci.ids"
+        use r = new StreamReader(s)
+
+        let lineRx = Regex @"^([\t]*)([0-9a-fA-F]{4})[ \t]*(.*)$"
+
+
+        let mutable vendors = Map.empty
+        let mutable devices = Map.empty
+
+        let mutable currentVendor = None
+
+        while not r.EndOfStream do
+            let line = r.ReadLine()
+            if not (line.StartsWith "#") then
+                let m = lineRx.Match line
+                if m.Success then
+                    let kind = m.Groups.[1].Length
+                    let id = System.UInt32.Parse(m.Groups.[2].Value, Globalization.NumberStyles.HexNumber)
+                    let name = m.Groups.[3].Value.Trim()
+
+                    match kind with
+                    | 0 ->
+                        // vendor
+                        vendors <- Map.add id name vendors
+                        currentVendor <- Some id
+
+                    | 1 -> 
+                        // device
+                        match currentVendor with
+                        | Some vid ->
+                            devices <- Map.add (vid, id) name devices
+                        | None ->
+                            printfn "device with no vendor"
+                    | _ ->
+                        ()
+                        
+        printfn "%d vendors" (Map.count vendors)
+        printfn "%d devices" (Map.count devices)
+
+
+        let bb = System.Text.StringBuilder()
+        let printfn fmt = fmt |> Printf.kprintf(fun str -> bb.AppendLine str |> ignore)
+
+        printfn "namespace WebGPU"
+
+        printfn "module PCI ="
+
+        printfn "    let vendors = "
+        printfn "        Map.ofArray [|"
+        for (id, name) in Map.toSeq vendors do
+            let name = name.Replace("\"", "\\\"")
+            printfn "            0x%04Xu, \"%s\"" id name
+        printfn "        |]"
+        
+
+        let devs = 
+            devices 
+            |> Map.toSeq 
+            |> Seq.map (fun ((vid, did), name) -> vid, (did, name))
+            |> Seq.groupBy fst
+            |> Seq.map (fun (g,vs) -> g, vs |> Seq.map snd |> Map.ofSeq)
+            |> Map.ofSeq
+
+
+        printfn "    let devices = "
+        printfn "        Map.ofArray [|"
+        for (vid, devs) in Map.toSeq devs do
+            printfn "            0x%04Xu, Map.ofArray [|" vid
+            for (did, name) in Map.toSeq devs do
+                let name = name.Replace("\"", "\\\"")
+                printfn "                0x%04Xu, \"%s\"" did name
+            printfn "            |]"
+        printfn "        |]"
+
+        printfn "    let tryGetVendorName (id : uint32) = Map.tryFind id vendors"
+        printfn "    let tryGetDeviceName (vid : uint32) (did : uint32) = Map.tryFind vid devices |> Option.bind (Map.tryFind did)"
+
+
+        let t = bb.ToString()
+        File.WriteAllText(@"C:\Users\Schorsch\Development\DawnSharp\src\DawnSharp\PCI.fs", t)
+
+open Silk.NET.GLFW
+
+[<EntryPoint; STAThread>]
 let main argv =
+    Aardvark.Init()
+ 
+    let glfw = Glfw.GetApi()
+    glfw.Init() |> ignore
+    glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi)
+    //glfw.WindowHint(WindowHintBool.Visible, false)
+    let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
+
     let instance = Instance()
+    //instance.EnableBackendValidation false
+    //instance.EnableGPUBasedBackendValidation false
+    //instance.EnableBeginCaptureOnStartup false
+
     let adapters = instance.GetDefaultAdapters()
 
-    //for a in adapters do
-    //    printfn "%s" a.Name
-    //    printfn "  %A" a.BackendType
-    //    printfn "  %A" a.DeviceType
+    let idx = 1
 
-    for a in [| adapters.[1] |] do
-        match a.BackendType with
-        | BackendType.Null -> 
-            printfn "%s" a.Name
-        | _ -> 
-            let dev = a.CreateDevice()
-            dev.SetUncapturedErrorCallback(ErrorCallback(fun err str _ -> 
-                let message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi (NativePtr.toNativeInt str)
-                printfn "%A: %s" err message
-            ), 0n)
-            |> ignore
-            printfn "%s (%A) " a.Name a.BackendType
+    //for (idx, a) in Array.indexed adapters do
+    //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
+    //printf "select device: "
+    //let idx = System.Console.ReadLine() |> int
+
+    let a = adapters.[idx]
+    match a.BackendType with
+    | BackendType.Null -> 
+        printfn "%s" a.Name
+    | _ -> 
+        let dev = a.CreateDevice()
+        dev.SetUncapturedErrorCallback( fun typ msg _ ->
+            let msg = Marshal.PtrToStringAnsi (NativePtr.toNativeInt msg)
+            printfn "%A: %s" typ msg
+        ) |> ignore
+
+        let binding = 
+            dev.CreateBackendBinding(a.BackendType, NativePtr.toNativeInt win)
+
+        let queue = dev.GetDefaultQueue()
+        
+        
+        //let pDesc = Marshal.AllocHGlobal(sizeof<DawnRaw.WGPUSwapChainDescriptor>) |> NativePtr.ofNativeInt<DawnRaw.WGPUSwapChainDescriptor>
+        
+        let createSwapChain(size : V2i) =
+            let noSurface = Surface(dev, Unchecked.defaultof<_>)
+            let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
+            let swapChainImpl = binding.GetSwapChainImplementation()
+            //let desc = 
+            //    {
+            //        Label = null
+            //        Format = swapChainFormat
+            //        Implementation = swapChainImpl
+            //        Usage = TextureUsage.OutputAttachment
+            //        Width = uint32 size.X
+            //        Height = uint32 size.Y
+            //        PresentMode = PresentMode.Immediate
+            //    }
+            //desc.Pin(fun n -> NativePtr.write pDesc n)
+
+            let chain = 
+                //SwapChain(dev, DawnRaw.wgpuDeviceCreateSwapChain(dev.Handle, Unchecked.defaultof<_>, pDesc))
+                dev.CreateSwapChain(
+                    noSurface,
+                    {
+                        Label = "haha"
+                        Format = swapChainFormat
+                        Implementation = swapChainImpl
+                        Usage = TextureUsage.OutputAttachment
+                        Width = uint32 size.X
+                        Height = uint32 size.Y
+                        PresentMode = PresentMode.Immediate
+                    }
+                )
+
+            chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, uint32 size.X, uint32 size.Y)
+            chain
+            
+        dev.Tick()
+        let mutable size = V2i.II
+        glfw.GetFramebufferSize(win, &size.X, &size.Y)
+        let mutable chain = createSwapChain size
+
+        let mutable closed = false
+        glfw.SetWindowCloseCallback(win, GlfwCallbacks.WindowCloseCallback(fun w ->
+            closed <- true
+            glfw.PostEmptyEvent()
+        )) |> ignore
+
+        
+
+        
+        let shaderCode =
+            String.concat "\r\n" [
+                "#version 450"
+                "#ifdef Vertex"
+                "layout(location = 0) in vec4 pos;"
+                ""
+                "void main()"
+                "{"
+                "    gl_Position = pos;"
+                "}"
+                "#endif"
+                ""
+                "#ifdef Fragment"
+                "layout(location = 0) out vec4 color;"
+                "void main()"
+                "{"
+                "    color = vec4(gl_FragCoord.xy / vec2(640, 480), 1, 1);"
+                "}"
+                "#endif"
+            ]
+
+        let vertexModule =
+            dev.CreateGLSLShaderModule {
+                ShaderStage = ShaderStage.Vertex
+                Label       = "VS"
+                EntryPoint  = "main"
+                Defines     = ["Vertex"]
+                Code        = shaderCode
+            }
+
+        let fragmentModule =
+            dev.CreateGLSLShaderModule {
+                ShaderStage = ShaderStage.Fragment
+                Label       = "FS"
+                EntryPoint  = "main"
+                Defines     = ["Fragment"]
+                Code        = shaderCode
+            }
+
+        let pipelineLayout = 
+            dev.CreatePipelineLayout {
+                Label = null
+                BindGroupLayouts = [||]
+            }
+
+        let pipeline = 
+            dev.CreateRenderPipeline {
+                Label  = "pipy"
+                AlphaToCoverageEnabled = false
+                Layout  = pipelineLayout
+                VertexStage = { Module = vertexModule; EntryPoint = "main" }
+                FragmentStage = [| { Module = fragmentModule; EntryPoint = "main" } |]
+                PrimitiveTopology = PrimitiveTopology.TriangleStrip
+                SampleCount = 1u
+                SampleMask = 1u
+                RasterizationState =
+                    [|
+                        {
+                            FrontFace = FrontFace.CCW
+                            CullMode = CullMode.None
+                            DepthBias = 0
+                            DepthBiasClamp = 0.0f
+                            DepthBiasSlopeScale = 0.0f
+                        }
+                    |]
+
+                VertexState = 
+                    [|  
+                        { 
+                            IndexFormat = IndexFormat.Uint32
+                            VertexBuffers = 
+                            [|
+                                { 
+                                    StepMode = InputStepMode.Vertex
+                                    ArrayStride = 12UL
+                                    Attributes =
+                                        [|
+                                            { Format = VertexFormat.Float3; Offset = 0UL; ShaderLocation = 0u }
+                                        |]
+                                }
+                            |]
+                        }
+                    |]
+                DepthStencilState =     
+                    [||]
+                ColorStates = 
+                    [|
+                        { 
+                            Format = TextureFormat.RGBA8Unorm 
+                            AlphaBlend = { Operation = BlendOperation.Add; SrcFactor = BlendFactor.One; DstFactor = BlendFactor.Zero }
+                            ColorBlend = { Operation = BlendOperation.Add; SrcFactor = BlendFactor.One; DstFactor = BlendFactor.Zero }
+                            WriteMask = ColorWriteMask.All
+                        }
+                    |]
+            }
+
+        let arr = [| V3f.OOO; V3f.IOO; V3f.OIO; V3f.IIO |] |> Array.map (fun v -> v - V3f(0.5f, 0.5f, 0.0f))
+        let buf = dev.CreateBuffer { Label = null; Size = 12UL * uint64 arr.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Vertex }
+        use ptr = fixed arr
+        queue.WriteBuffer(buf, 0UL, NativePtr.toNativeInt ptr, 12un * unativeint arr.Length)
+
+        let idx = [|0;1;2;3|]
+        let ib = dev.CreateBuffer { Label = null; Size = 4UL * uint64 idx.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Index }
+        use ptr = fixed idx
+        queue.WriteBuffer(ib, 0UL, NativePtr.toNativeInt ptr, 4un * unativeint arr.Length)
+
+        let rand = RandomSystem()
+        glfw.SetWindowRefreshCallback(win, GlfwCallbacks.WindowRefreshCallback (fun w ->
+            let mutable s = V2i.II
+            glfw.GetFramebufferSize(win, &s.X, &s.Y)
+            if false && s <> size then
+                size <- s
+                //let newChain = createSwapChain s
+                //chain <- newChain
+                let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
+                chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, uint32 s.X, uint32 s.Y)
+
+            let tex = chain.GetCurrentTextureView()
+
+            let c = rand.UniformC3f()
+            let cmd = dev.CreateCommandEncoder { Label = null }
+            let pass = 
+                cmd.BeginRenderPass { 
+                    Label = null
+                    ColorAttachments = 
+                        [|
+                            { 
+                                Attachment = tex
+                                ResolveTarget = TextureView(dev, Unchecked.defaultof<_>) 
+                                LoadOp = LoadOp.Clear
+                                StoreOp = StoreOp.Store
+                                ClearColor = { R = c.R; G = c.G; B = c.B; A = 1.0f }
+
+                            }
+                        |]
+                    DepthStencilAttachment = [||]
+                    OcclusionQuerySet = QuerySet(dev, Unchecked.defaultof<_>)
+                }
+
+            pass.SetPipeline(pipeline)
+            pass.SetIndexBufferWithFormat(ib, IndexFormat.Uint32, 0UL, 4UL * uint64 idx.Length)
+            pass.SetVertexBuffer(0u, buf, 0UL, 12UL * uint64 arr.Length)
+            pass.Draw(uint32 idx.Length, 1u, 0u, 0u)
+
+            pass.EndPass()
+            let buf = cmd.Finish { Label = null }
+            cmd.Release()
+            queue.Submit [| buf |]
+            buf.Release()
+            pass.Release()
+
+            tex.Release()
+            chain.Present()
+            printfn "rendered"
+        )) |> ignore
+
+        while not (glfw.WindowShouldClose win) do
+            glfw.WaitEvents()
+
+            //chain.GetCurrentTextureView
+
+            //dev.SetUncapturedErrorCallback(fun err str _ -> 
+            //    let message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi (NativePtr.toNativeInt str)
+            //    printfn "%A: %s" err message
+            //)
+            //|> ignore
+            //printfn "%s (%A) " a.Name a.BackendType
 
 
-            for i in 1 .. 10 do
-                printf "  %d " i
-                run dev
+            //for i in 1 .. 1 do
+            //    //printf "  %d " i
+            //    run dev
     
     0 // return an integer exit code

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DawnSharp.Demo": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

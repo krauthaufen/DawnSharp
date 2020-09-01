@@ -13,7 +13,9 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="Generator.fsx" />
+    <Compile Include="PCI.fs" />
     <Compile Include="WebGPU.fs" />
+    <Compile Include="WebGPUExtensions.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

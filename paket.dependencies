@@ -3,7 +3,9 @@ framework: netstandard2.0, netcoreapp3.1
 
 nuget FSharp.Core                           >= 4.6.2 lowest_matching: true
 nuget Newtonsoft.JSON                       >= 12.0.3
-
+nuget GLSLangSharp                          ~> 0.4.6
+nuget Aardvark.Base                         ~> 5.0.18
+nuget Silk.NET.GLFW                         ~> 1.5.0
 
 group Build
 source https://api.nuget.org/v3/index.json
