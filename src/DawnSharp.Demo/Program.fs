@@ -766,7 +766,7 @@ let main argv =
                     [|
                         {
                             FrontFace = FrontFace.CCW
-                            CullMode = CullMode.None
+                            CullMode = CullMode.Back
                             DepthBias = 0
                             DepthBiasClamp = 0.0f
                             DepthBiasSlopeScale = 0.0f
@@ -826,7 +826,6 @@ let main argv =
 
             let tex = chain.GetCurrentTextureView()
 
-            let c = rand.UniformC3f()
             let cmd = dev.CreateCommandEncoder { Label = null }
             let pass = 
                 cmd.BeginRenderPass { 
@@ -838,8 +837,7 @@ let main argv =
                                 ResolveTarget = TextureView(dev, Unchecked.defaultof<_>) 
                                 LoadOp = LoadOp.Clear
                                 StoreOp = StoreOp.Store
-                                ClearColor = { R = c.R; G = c.G; B = c.B; A = 1.0f }
-
+                                ClearColor = { R = 0.5f; G = 0.5f; B = 0.5f; A = 1.0f }
                             }
                         |]
                     DepthStencilAttachment = [||]
@@ -847,9 +845,9 @@ let main argv =
                 }
 
             pass.SetPipeline(pipeline)
-            pass.SetIndexBufferWithFormat(ib, IndexFormat.Uint32, 0UL, 4UL * uint64 idx.Length)
+            //pass.SetIndexBufferWithFormat(ib, IndexFormat.Uint32, 0UL, 4UL * uint64 idx.Length)
             pass.SetVertexBuffer(0u, buf, 0UL, 12UL * uint64 arr.Length)
-            pass.Draw(uint32 idx.Length, 1u, 0u, 0u)
+            pass.Draw(uint32 arr.Length, 1u, 0u, 0u)
 
             pass.EndPass()
             let buf = cmd.Finish { Label = null }
@@ -860,24 +858,9 @@ let main argv =
 
             tex.Release()
             chain.Present()
-            printfn "rendered"
         )) |> ignore
 
         while not (glfw.WindowShouldClose win) do
             glfw.WaitEvents()
 
-            //chain.GetCurrentTextureView
-
-            //dev.SetUncapturedErrorCallback(fun err str _ -> 
-            //    let message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi (NativePtr.toNativeInt str)
-            //    printfn "%A: %s" err message
-            //)
-            //|> ignore
-            //printfn "%s (%A) " a.Name a.BackendType
-
-
-            //for i in 1 .. 1 do
-            //    //printf "  %d " i
-            //    run dev
-    
-    0 // return an integer exit code
+    0
