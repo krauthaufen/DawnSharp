@@ -239,6 +239,7 @@ type Adapter(handle : AdapterHandle) =
             use pEn = fixed enabledToggles
             use pDis = fixed disabledToggles
             let dh = DawnRaw.dawnCreateDevice(handle, extensions.Length, pExt, enabledToggles.Length, pEn, disabledToggles.Length, pDis)
+            
             Device(dh)
         finally
             extensions |> Array.iter Marshal.FreeHGlobal
@@ -304,7 +305,7 @@ type Buffer with
     member x.Map(mode, offset, size) =
         let mutable res = Int32.MaxValue
         let mutable mapPointer = 0n
-        x.MapAsync(mode, offset, size, fun status _ ->
+        x.MapAsync(mode, offset, size, BufferMapCallback(fun status _ ->
             match status with
             | BufferMapAsyncStatus.Success ->   
                 let ptr = x.GetConstMappedRange(offset, size)
@@ -312,7 +313,7 @@ type Buffer with
                 res <- int BufferMapAsyncStatus.Success
             | _ ->
                 res <- int status
-        )
+        ), 0n)
 
         while Volatile.Read(&res) = Int32.MaxValue do
             x.Device.Tick()
@@ -327,9 +328,9 @@ type Queue with
         let mutable res = Int32.MaxValue
         let f = x.CreateFence { Label = null; InitialValue = 0UL }
         x.Signal(f, 1UL)
-        f.OnCompletion(1UL, fun status _ ->
+        f.OnCompletion(1UL, FenceOnCompletionCallback(fun status _ ->
             Volatile.Write(&res, int status)
-        )
+        ), 0n)
         let mutable iter = 0
         while Volatile.Read(&res) = Int32.MaxValue do    
             x.Device.Tick()
@@ -426,50 +427,44 @@ let run(device : Device) =
             AlphaToCoverageEnabled = false
             Layout  = pipelineLayout
             VertexStage = { Module = vertexModule; EntryPoint = "main" }
-            FragmentStage = [| { Module = fragmentModule; EntryPoint = "main" } |]
+            FragmentStage = Some { Module = fragmentModule; EntryPoint = "main" } 
             PrimitiveTopology = PrimitiveTopology.TriangleList
-            SampleCount = 1u
-            SampleMask = 1u
+            SampleCount = 1
+            SampleMask = 1
             RasterizationState =
-                [|
-                    {
-                        FrontFace = FrontFace.CCW
-                        CullMode = CullMode.Back
-                        DepthBias = 0
-                        DepthBiasClamp = 0.0f
-                        DepthBiasSlopeScale = 0.0f
-                    }
-                |]
+                Some {
+                    FrontFace = FrontFace.CCW
+                    CullMode = CullMode.Back
+                    DepthBias = 0
+                    DepthBiasClamp = 0.0f
+                    DepthBiasSlopeScale = 0.0f
+                }
 
             VertexState = 
-                [|  
-                    { 
-                        IndexFormat = IndexFormat.Undefined
-                        VertexBuffers = 
-                        [|
-                            { 
-                                StepMode = InputStepMode.Vertex
-                                ArrayStride = 12UL
-                                Attributes =
-                                    [|
-                                        { Format = VertexFormat.Float3; Offset = 0UL; ShaderLocation = 0u }
-                                    |]
-                            }
-                        |]
-                    }
-                |]
+                Some { 
+                    IndexFormat = IndexFormat.Undefined
+                    VertexBuffers = 
+                    [|
+                        { 
+                            StepMode = InputStepMode.Vertex
+                            ArrayStride = 12UL
+                            Attributes =
+                                [|
+                                    { Format = VertexFormat.Float3; Offset = 0UL; ShaderLocation = 0 }
+                                |]
+                        }
+                    |]
+                }
             DepthStencilState =     
-                [|
-                    { 
-                        Format = TextureFormat.Depth24PlusStencil8
-                        DepthWriteEnabled = true
-                        DepthCompare = CompareFunction.LessEqual
-                        StencilFront = { Compare = CompareFunction.Never; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
-                        StencilBack = { Compare = CompareFunction.Never; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
-                        StencilReadMask = 0u
-                        StencilWriteMask = 0u
-                    }
-                |]
+                Some { 
+                    Format = TextureFormat.Depth24PlusStencil8
+                    DepthWriteEnabled = true
+                    DepthCompare = CompareFunction.LessEqual
+                    StencilFront = { Compare = CompareFunction.Always; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                    StencilBack = { Compare = CompareFunction.Always; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                    StencilReadMask = 1
+                    StencilWriteMask = 1
+                }
             ColorStates = 
                 [|
                     { 
@@ -627,13 +622,13 @@ let main argv =
     let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
 
     let instance = Instance()
-    //instance.EnableBackendValidation false
-    //instance.EnableGPUBasedBackendValidation false
-    //instance.EnableBeginCaptureOnStartup false
+    instance.EnableBackendValidation false
+    instance.EnableGPUBasedBackendValidation false
+    instance.EnableBeginCaptureOnStartup false
 
     let adapters = instance.GetDefaultAdapters()
 
-    let idx = 1
+    let idx = 0
 
     //for (idx, a) in Array.indexed adapters do
     //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
@@ -641,15 +636,16 @@ let main argv =
     //let idx = System.Console.ReadLine() |> int
 
     let a = adapters.[idx]
+    printfn "using %s %s (%A)" a.Vendor a.Name a.BackendType
     match a.BackendType with
     | BackendType.Null -> 
         printfn "%s" a.Name
     | _ -> 
         let dev = a.CreateDevice()
-        dev.SetUncapturedErrorCallback( fun typ msg _ ->
-            let msg = Marshal.PtrToStringAnsi (NativePtr.toNativeInt msg)
+        dev.SetUncapturedErrorCallback(ErrorCallback(fun typ msg _ ->
+            let msg = Marshal.PtrToStringAnsi msg
             printfn "%A: %s" typ msg
-        ) |> ignore
+        ), 0n) |> ignore
 
         let binding = 
             dev.CreateBackendBinding(a.BackendType, NativePtr.toNativeInt win)
@@ -660,7 +656,6 @@ let main argv =
         //let pDesc = Marshal.AllocHGlobal(sizeof<DawnRaw.WGPUSwapChainDescriptor>) |> NativePtr.ofNativeInt<DawnRaw.WGPUSwapChainDescriptor>
         
         let createSwapChain(size : V2i) =
-            let noSurface = Surface(dev, Unchecked.defaultof<_>)
             let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
             let swapChainImpl = binding.GetSwapChainImplementation()
             //let desc = 
@@ -678,33 +673,38 @@ let main argv =
             let chain = 
                 //SwapChain(dev, DawnRaw.wgpuDeviceCreateSwapChain(dev.Handle, Unchecked.defaultof<_>, pDesc))
                 dev.CreateSwapChain(
-                    noSurface,
+                    null,
                     {
-                        Label = "haha"
+                        Label = null
                         Format = swapChainFormat
                         Implementation = swapChainImpl
                         Usage = TextureUsage.OutputAttachment
-                        Width = uint32 size.X
-                        Height = uint32 size.Y
+                        Width = size.X
+                        Height = size.Y
                         PresentMode = PresentMode.Immediate
                     }
                 )
 
-            chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, uint32 size.X, uint32 size.Y)
+            chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, size.X, size.Y)
             chain
             
+
         dev.Tick()
         let mutable size = V2i.II
         glfw.GetFramebufferSize(win, &size.X, &size.Y)
         let mutable chain = createSwapChain size
 
-        let mutable closed = false
-        glfw.SetWindowCloseCallback(win, GlfwCallbacks.WindowCloseCallback(fun w ->
-            closed <- true
-            glfw.PostEmptyEvent()
-        )) |> ignore
-
         
+        let depth =
+            dev.CreateTexture {
+                Label = null
+                Usage = TextureUsage.OutputAttachment
+                Dimension = TextureDimension.D2D
+                Size = { Width = size.X; Height = size.Y; Depth = 1 }
+                Format = TextureFormat.Depth24PlusStencil8
+                MipLevelCount = 1
+                SampleCount = 1
+            }
 
         
         let shaderCode =
@@ -754,44 +754,50 @@ let main argv =
 
         let pipeline = 
             dev.CreateRenderPipeline {
-                Label  = "pipy"
+                Label  = null
                 AlphaToCoverageEnabled = false
                 Layout  = pipelineLayout
                 VertexStage = { Module = vertexModule; EntryPoint = "main" }
-                FragmentStage = [| { Module = fragmentModule; EntryPoint = "main" } |]
+                FragmentStage = Some { Module = fragmentModule; EntryPoint = "main" }
                 PrimitiveTopology = PrimitiveTopology.TriangleStrip
-                SampleCount = 1u
-                SampleMask = 1u
+                SampleCount = 1
+                SampleMask = 1
                 RasterizationState =
-                    [|
-                        {
-                            FrontFace = FrontFace.CCW
-                            CullMode = CullMode.Back
-                            DepthBias = 0
-                            DepthBiasClamp = 0.0f
-                            DepthBiasSlopeScale = 0.0f
-                        }
-                    |]
+                    Some {
+                        FrontFace = FrontFace.CCW
+                        CullMode = CullMode.None
+                        DepthBias = 0
+                        DepthBiasClamp = 0.0f
+                        DepthBiasSlopeScale = 0.0f
+                    }
 
                 VertexState = 
-                    [|  
-                        { 
-                            IndexFormat = IndexFormat.Uint32
-                            VertexBuffers = 
+                    Some { 
+                        IndexFormat = IndexFormat.Uint32
+                        VertexBuffers = 
                             [|
                                 { 
                                     StepMode = InputStepMode.Vertex
                                     ArrayStride = 12UL
                                     Attributes =
                                         [|
-                                            { Format = VertexFormat.Float3; Offset = 0UL; ShaderLocation = 0u }
+                                            { Format = VertexFormat.Float3; Offset = 0UL; ShaderLocation = 0 }
                                         |]
                                 }
                             |]
-                        }
-                    |]
+                    }
                 DepthStencilState =     
-                    [||]
+                    
+                    Some {
+                        Format = TextureFormat.Depth24PlusStencil8
+                        DepthWriteEnabled = true
+                        DepthCompare = CompareFunction.LessEqual
+                        StencilFront = { Compare = CompareFunction.Always; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                        StencilBack = { Compare = CompareFunction.Always; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                        StencilReadMask = 0xFFFFFFFF
+                        StencilWriteMask = 0xFFFFFFFF
+                    }
+
                 ColorStates = 
                     [|
                         { 
@@ -803,6 +809,19 @@ let main argv =
                     |]
             }
 
+        let depthView =
+            depth.CreateView {
+                Label = null
+                Format = TextureFormat.Depth24PlusStencil8
+                Dimension = TextureViewDimension.D2D
+                BaseMipLevel = 0
+                MipLevelCount = 1
+                BaseArrayLayer = 0
+                ArrayLayerCount = 1
+                Aspect = TextureAspect.All
+            }
+        
+
         let arr = [| V3f.OOO; V3f.IOO; V3f.OIO; V3f.IIO |] |> Array.map (fun v -> v - V3f(0.5f, 0.5f, 0.0f))
         let buf = dev.CreateBuffer { Label = null; Size = 12UL * uint64 arr.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Vertex }
         use ptr = fixed arr
@@ -813,16 +832,18 @@ let main argv =
         use ptr = fixed idx
         queue.WriteBuffer(ib, 0UL, NativePtr.toNativeInt ptr, 4un * unativeint arr.Length)
 
-        let rand = RandomSystem()
-        glfw.SetWindowRefreshCallback(win, GlfwCallbacks.WindowRefreshCallback (fun w ->
+        glfw.PollEvents()
+        let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
+
+        let render() =  
             let mutable s = V2i.II
             glfw.GetFramebufferSize(win, &s.X, &s.Y)
             if false && s <> size then
                 size <- s
                 //let newChain = createSwapChain s
                 //chain <- newChain
-                let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
-                chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, uint32 s.X, uint32 s.Y)
+                
+                chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, s.X, s.Y)
 
             let tex = chain.GetCurrentTextureView()
 
@@ -834,20 +855,32 @@ let main argv =
                         [|
                             { 
                                 Attachment = tex
-                                ResolveTarget = TextureView(dev, Unchecked.defaultof<_>) 
+                                ResolveTarget = null
                                 LoadOp = LoadOp.Clear
                                 StoreOp = StoreOp.Store
                                 ClearColor = { R = 0.5f; G = 0.5f; B = 0.5f; A = 1.0f }
                             }
                         |]
-                    DepthStencilAttachment = [||]
-                    OcclusionQuerySet = QuerySet(dev, Unchecked.defaultof<_>)
+                    DepthStencilAttachment = 
+                        Some {
+                            Attachment = depthView
+                            DepthLoadOp = LoadOp.Clear
+                            DepthStoreOp = StoreOp.Store
+                            ClearDepth = 1.0f
+                            DepthReadOnly = false
+                            StencilLoadOp = LoadOp.Clear
+                            StencilStoreOp = StoreOp.Store
+                            ClearStencil = 0
+                            StencilReadOnly = false
+                        }
+                        
+                    OcclusionQuerySet = null
                 }
 
             pass.SetPipeline(pipeline)
             //pass.SetIndexBufferWithFormat(ib, IndexFormat.Uint32, 0UL, 4UL * uint64 idx.Length)
-            pass.SetVertexBuffer(0u, buf, 0UL, 12UL * uint64 arr.Length)
-            pass.Draw(uint32 arr.Length, 1u, 0u, 0u)
+            pass.SetVertexBuffer(0, buf, 0UL, 12UL * uint64 arr.Length)
+            pass.Draw(arr.Length, 1, 0, 0)
 
             pass.EndPass()
             let buf = cmd.Finish { Label = null }
@@ -858,9 +891,15 @@ let main argv =
 
             tex.Release()
             chain.Present()
-        )) |> ignore
+            printfn "rendered"
 
+        let mutable dirty = true
+        glfw.SetWindowRefreshCallback(win, GlfwCallbacks.WindowRefreshCallback (fun w -> dirty <- true)) |> ignore
+        glfw.PostEmptyEvent()
         while not (glfw.WindowShouldClose win) do
+            if dirty then 
+                dirty <- false
+                render()
             glfw.WaitEvents()
 
     0

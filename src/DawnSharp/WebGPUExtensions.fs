@@ -49,7 +49,7 @@ type WebGPUExtensions private() =
                 NativePtr.set data 1 (nativeint (int SType.ShaderModuleSPIRVDescriptor))
                 NativePtr.set data 2 (nativeint (descriptor.Code.Length / 4))
                 NativePtr.set data 3 (gc.AddrOfPinnedObject())
-                native.pNext <- NativePtr.toNativeInt data
+                native.Next <- NativePtr.toNativeInt data
                 use ptr = fixed [| native |]
                 let handle = wgpuDeviceCreateShaderModule(device.Handle, ptr)
                 ShaderModule(device, handle)
