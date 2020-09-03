@@ -342,6 +342,9 @@ type Queue with
 
 let run(device : Device) =
     let size = 32 <<< 20
+
+
+
     let src = 
         device.CreateBuffer {
             Label = "a"
@@ -427,12 +430,12 @@ let run(device : Device) =
             AlphaToCoverageEnabled = false
             Layout  = pipelineLayout
             VertexStage = { Module = vertexModule; EntryPoint = "main" }
-            FragmentStage = Some { Module = fragmentModule; EntryPoint = "main" } 
+            FragmentStage = ValueSome { Module = fragmentModule; EntryPoint = "main" } 
             PrimitiveTopology = PrimitiveTopology.TriangleList
             SampleCount = 1
             SampleMask = 1
             RasterizationState =
-                Some {
+                ValueSome {
                     FrontFace = FrontFace.CCW
                     CullMode = CullMode.Back
                     DepthBias = 0
@@ -441,7 +444,7 @@ let run(device : Device) =
                 }
 
             VertexState = 
-                Some { 
+                ValueSome { 
                     IndexFormat = IndexFormat.Undefined
                     VertexBuffers = 
                     [|
@@ -456,7 +459,7 @@ let run(device : Device) =
                     |]
                 }
             DepthStencilState =     
-                Some { 
+                ValueSome { 
                     Format = TextureFormat.Depth24PlusStencil8
                     DepthWriteEnabled = true
                     DepthCompare = CompareFunction.LessEqual
@@ -479,7 +482,7 @@ let run(device : Device) =
     
 
     let buf = 
-        let cmd = device.CreateCommandEncoder { Label = null }
+        let cmd = device.CreateCommandEncoder()
         cmd.CopyBufferToBuffer(src, 0UL, real, 0UL, uint64 size)
         cmd.CopyBufferToBuffer(real, 0UL, dst, 0UL, uint64 size)
 
@@ -497,7 +500,7 @@ let run(device : Device) =
         //    { Width = 1024u; Height = 1024u; Depth = 1u }
         //)
 
-        cmd.Finish { Label = null }
+        cmd.Finish()
         
     let q = device.GetDefaultQueue()
     q.Submit [| buf |]
@@ -611,6 +614,14 @@ module PCITable =
 
 open Silk.NET.GLFW
 
+module NativePtr = 
+    let inline pinString (str : string) (cont : nativeint -> 'a) =
+        let length = 1 + System.Text.Encoding.UTF8.GetByteCount str
+        let ptr = NativePtr.stackalloc<byte> length
+        let l = System.Text.Encoding.UTF8.GetBytes(str.AsSpan(), Span<byte>(NativePtr.toVoidPtr ptr, length))
+        NativePtr.set ptr l 0uy
+        cont (NativePtr.toNativeInt ptr)
+
 [<EntryPoint; STAThread>]
 let main argv =
     Aardvark.Init()
@@ -622,9 +633,9 @@ let main argv =
     let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
 
     let instance = Instance()
-    instance.EnableBackendValidation false
-    instance.EnableGPUBasedBackendValidation false
-    instance.EnableBeginCaptureOnStartup false
+    instance.EnableBackendValidation true
+    instance.EnableGPUBasedBackendValidation true
+    instance.EnableBeginCaptureOnStartup true
 
     let adapters = instance.GetDefaultAdapters()
 
@@ -643,7 +654,6 @@ let main argv =
     | _ -> 
         let dev = a.CreateDevice()
         dev.SetUncapturedErrorCallback(ErrorCallback(fun typ msg _ ->
-            let msg = Marshal.PtrToStringAnsi msg
             printfn "%A: %s" typ msg
         ), 0n) |> ignore
 
@@ -655,23 +665,11 @@ let main argv =
         
         //let pDesc = Marshal.AllocHGlobal(sizeof<DawnRaw.WGPUSwapChainDescriptor>) |> NativePtr.ofNativeInt<DawnRaw.WGPUSwapChainDescriptor>
         
-        let createSwapChain(size : V2i) =
-            let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
-            let swapChainImpl = binding.GetSwapChainImplementation()
-            //let desc = 
-            //    {
-            //        Label = null
-            //        Format = swapChainFormat
-            //        Implementation = swapChainImpl
-            //        Usage = TextureUsage.OutputAttachment
-            //        Width = uint32 size.X
-            //        Height = uint32 size.Y
-            //        PresentMode = PresentMode.Immediate
-            //    }
-            //desc.Pin(fun n -> NativePtr.write pDesc n)
+        let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
+        let swapChainImpl = binding.GetSwapChainImplementation()
 
+        let createSwapChain(size : V2i) =
             let chain = 
-                //SwapChain(dev, DawnRaw.wgpuDeviceCreateSwapChain(dev.Handle, Unchecked.defaultof<_>, pDesc))
                 dev.CreateSwapChain(
                     null,
                     {
@@ -728,7 +726,7 @@ let main argv =
                 "#endif"
             ]
 
-        let vertexModule =
+        use vertexModule =
             dev.CreateGLSLShaderModule {
                 ShaderStage = ShaderStage.Vertex
                 Label       = "VS"
@@ -737,7 +735,7 @@ let main argv =
                 Code        = shaderCode
             }
 
-        let fragmentModule =
+        use fragmentModule =
             dev.CreateGLSLShaderModule {
                 ShaderStage = ShaderStage.Fragment
                 Label       = "FS"
@@ -746,24 +744,24 @@ let main argv =
                 Code        = shaderCode
             }
 
-        let pipelineLayout = 
+        use pipelineLayout = 
             dev.CreatePipelineLayout {
-                Label = null
+                Label = "Pipeline"
                 BindGroupLayouts = [||]
             }
 
-        let pipeline = 
+        use pipeline = 
             dev.CreateRenderPipeline {
-                Label  = null
+                Label  = "Hans"
                 AlphaToCoverageEnabled = false
                 Layout  = pipelineLayout
                 VertexStage = { Module = vertexModule; EntryPoint = "main" }
-                FragmentStage = Some { Module = fragmentModule; EntryPoint = "main" }
+                FragmentStage = ValueSome { Module = fragmentModule; EntryPoint = "main" }
                 PrimitiveTopology = PrimitiveTopology.TriangleStrip
                 SampleCount = 1
                 SampleMask = 1
                 RasterizationState =
-                    Some {
+                    ValueSome {
                         FrontFace = FrontFace.CCW
                         CullMode = CullMode.None
                         DepthBias = 0
@@ -772,7 +770,7 @@ let main argv =
                     }
 
                 VertexState = 
-                    Some { 
+                    ValueSome { 
                         IndexFormat = IndexFormat.Uint32
                         VertexBuffers = 
                             [|
@@ -786,14 +784,13 @@ let main argv =
                                 }
                             |]
                     }
-                DepthStencilState =     
-                    
-                    Some {
+                DepthStencilState =   
+                    ValueSome {
                         Format = TextureFormat.Depth24PlusStencil8
                         DepthWriteEnabled = true
                         DepthCompare = CompareFunction.LessEqual
-                        StencilFront = { Compare = CompareFunction.Always; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
-                        StencilBack = { Compare = CompareFunction.Always; FailOp = StencilOperation.Keep; PassOp = StencilOperation.Keep; DepthFailOp = StencilOperation.Keep }
+                        StencilFront = StencilStateFaceDescriptor.Default
+                        StencilBack = StencilStateFaceDescriptor.Default
                         StencilReadMask = 0xFFFFFFFF
                         StencilWriteMask = 0xFFFFFFFF
                     }
@@ -801,17 +798,17 @@ let main argv =
                 ColorStates = 
                     [|
                         { 
-                            Format = TextureFormat.RGBA8Unorm 
-                            AlphaBlend = { Operation = BlendOperation.Add; SrcFactor = BlendFactor.One; DstFactor = BlendFactor.Zero }
-                            ColorBlend = { Operation = BlendOperation.Add; SrcFactor = BlendFactor.One; DstFactor = BlendFactor.Zero }
+                            Format = swapChainFormat
+                            AlphaBlend = BlendDescriptor.Default
+                            ColorBlend = BlendDescriptor.Default
                             WriteMask = ColorWriteMask.All
                         }
                     |]
             }
 
-        let depthView =
+        use depthView =
             depth.CreateView {
-                Label = null
+                Label = "Franz"
                 Format = TextureFormat.Depth24PlusStencil8
                 Dimension = TextureViewDimension.D2D
                 BaseMipLevel = 0
@@ -823,12 +820,12 @@ let main argv =
         
 
         let arr = [| V3f.OOO; V3f.IOO; V3f.OIO; V3f.IIO |] |> Array.map (fun v -> v - V3f(0.5f, 0.5f, 0.0f))
-        let buf = dev.CreateBuffer { Label = null; Size = 12UL * uint64 arr.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Vertex }
+        use buf = dev.CreateBuffer { Label = null; Size = 12UL * uint64 arr.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Vertex }
         use ptr = fixed arr
         queue.WriteBuffer(buf, 0UL, NativePtr.toNativeInt ptr, 12un * unativeint arr.Length)
 
         let idx = [|0;1;2;3|]
-        let ib = dev.CreateBuffer { Label = null; Size = 4UL * uint64 idx.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Index }
+        use ib = dev.CreateBuffer { Label = null; Size = 4UL * uint64 idx.Length; MappedAtCreation = false; Usage = BufferUsage.CopyDst ||| BufferUsage.Index }
         use ptr = fixed idx
         queue.WriteBuffer(ib, 0UL, NativePtr.toNativeInt ptr, 4un * unativeint arr.Length)
 
@@ -845,10 +842,10 @@ let main argv =
                 
                 chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, s.X, s.Y)
 
-            let tex = chain.GetCurrentTextureView()
+            use tex = chain.GetCurrentTextureView()
 
-            let cmd = dev.CreateCommandEncoder { Label = null }
-            let pass = 
+            use cmd = dev.CreateCommandEncoder()
+            use pass = 
                 cmd.BeginRenderPass { 
                     Label = null
                     ColorAttachments = 
@@ -861,8 +858,8 @@ let main argv =
                                 ClearColor = { R = 0.5f; G = 0.5f; B = 0.5f; A = 1.0f }
                             }
                         |]
-                    DepthStencilAttachment = 
-                        Some {
+                    DepthStencilAttachment =
+                        ValueSome {
                             Attachment = depthView
                             DepthLoadOp = LoadOp.Clear
                             DepthStoreOp = StoreOp.Store
@@ -883,13 +880,9 @@ let main argv =
             pass.Draw(arr.Length, 1, 0, 0)
 
             pass.EndPass()
-            let buf = cmd.Finish { Label = null }
-            cmd.Release()
+            use buf = cmd.Finish()
             queue.Submit [| buf |]
-            buf.Release()
-            pass.Release()
 
-            tex.Release()
             chain.Present()
             printfn "rendered"
 

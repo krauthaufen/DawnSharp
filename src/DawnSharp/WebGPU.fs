@@ -2,6 +2,7 @@ namespace rec WebGPU
 open System
 open System.Security
 open System.Runtime.InteropServices
+open Microsoft.FSharp.NativeInterop
 #nowarn "9"
 #nowarn "49"
 
@@ -166,9 +167,13 @@ type TextureViewHandle =
         new(handle : nativeint) = { Handle = handle }
         static member Null = TextureViewHandle(0n)
     end
+type WGPUBufferMapCallback = delegate of BufferMapAsyncStatus * nativeint -> unit
+type WGPUDeviceLostCallback = delegate of nativeint * nativeint -> unit
+type WGPUErrorCallback = delegate of ErrorType * nativeint * nativeint -> unit
+type WGPUFenceOnCompletionCallback = delegate of FenceCompletionStatus * nativeint -> unit
 type BufferMapCallback = delegate of BufferMapAsyncStatus * nativeint -> unit
-type DeviceLostCallback = delegate of nativeint * nativeint -> unit
-type ErrorCallback = delegate of ErrorType * nativeint * nativeint -> unit
+type DeviceLostCallback = delegate of string * nativeint -> unit
+type ErrorCallback = delegate of ErrorType * string * nativeint -> unit
 type FenceOnCompletionCallback = delegate of FenceCompletionStatus * nativeint -> unit
 
 
@@ -1174,12 +1179,12 @@ type AdapterProperties =
         AdapterType : AdapterType
         BackendType : BackendType
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUAdapterProperties -> 'a) : 'a = 
         let x = x
         let _DeviceID = x.DeviceID
         let _VendorID = x.VendorID
-        let _Name = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Name
-        try
+        let inline _NameCont (_Name) = 
             let _AdapterType = x.AdapterType
             let _BackendType = x.BackendType
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUAdapterProperties>
@@ -1190,8 +1195,15 @@ type AdapterProperties =
             native.AdapterType <- _AdapterType
             native.BackendType <- _BackendType
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Name
+        if not (isNull x.Name) then
+            let _NameLen = System.Text.Encoding.UTF8.GetByteCount x.Name
+            let _NameSize = _NameLen + 1
+            let _NamePtr = NativePtr.stackalloc<byte> _NameSize
+            System.Text.Encoding.UTF8.GetBytes(x.Name.AsSpan(), Span<byte>(NativePtr.toVoidPtr _NamePtr, _NameSize)) |> ignore
+            NativePtr.set _NamePtr _NameLen 0uy
+            _NameCont (NativePtr.toNativeInt _NamePtr)
+        else
+            _NameCont 0n
 [<Struct>]
 type BindGroupDescriptor =
     {
@@ -1199,10 +1211,16 @@ type BindGroupDescriptor =
         Layout : BindGroupLayout
         Entries : array<BindGroupEntry>
     }
+    static member Default(Layout: BindGroupLayout, Entries: array<BindGroupEntry>) : BindGroupDescriptor =
+        {
+            Label = null
+            Layout = Layout
+            Entries = Entries
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBindGroupDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Layout = (if isNull x.Layout then BindGroupLayoutHandle.Null else x.Layout.Handle)
             let _EntriesCount = if isNull x.Entries then 0 else x.Entries.Length
             let rec _EntriesCont (inputs : array<BindGroupEntry>) (outputs : array<DawnRaw.WGPUBindGroupEntry>) (i : int) =
@@ -1218,8 +1236,15 @@ type BindGroupDescriptor =
                 else
                     inputs.[i].Pin(fun n -> outputs.[i] <- n; _EntriesCont inputs outputs (i + 1))
             _EntriesCont x.Entries (if _EntriesCount > 0 then Array.zeroCreate _EntriesCount else null) 0
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type BindGroupEntry =
     {
@@ -1230,6 +1255,16 @@ type BindGroupEntry =
         Sampler : Sampler
         TextureView : TextureView
     }
+    static member Default(Binding: int, Buffer: Buffer, Size: uint64, Sampler: Sampler, TextureView: TextureView) : BindGroupEntry =
+        {
+            Binding = Binding
+            Buffer = Buffer
+            Offset = 0UL
+            Size = Size
+            Sampler = Sampler
+            TextureView = TextureView
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBindGroupEntry -> 'a) : 'a = 
         let x = x
         let _Binding = x.Binding
@@ -1252,10 +1287,15 @@ type BindGroupLayoutDescriptor =
         Label : string
         Entries : array<BindGroupLayoutEntry>
     }
+    static member Default(Entries: array<BindGroupLayoutEntry>) : BindGroupLayoutDescriptor =
+        {
+            Label = null
+            Entries = Entries
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBindGroupLayoutDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _EntriesCount = if isNull x.Entries then 0 else x.Entries.Length
             let rec _EntriesCont (inputs : array<BindGroupLayoutEntry>) (outputs : array<DawnRaw.WGPUBindGroupLayoutEntry>) (i : int) =
                 if i >= _EntriesCount then
@@ -1269,8 +1309,15 @@ type BindGroupLayoutDescriptor =
                 else
                     inputs.[i].Pin(fun n -> outputs.[i] <- n; _EntriesCont inputs outputs (i + 1))
             _EntriesCont x.Entries (if _EntriesCount > 0 then Array.zeroCreate _EntriesCount else null) 0
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type BindGroupLayoutEntry =
     {
@@ -1284,6 +1331,19 @@ type BindGroupLayoutEntry =
         TextureComponentType : TextureComponentType
         StorageTextureFormat : TextureFormat
     }
+    static member Default(Binding: int, Visibility: ShaderStage, Type: BindingType) : BindGroupLayoutEntry =
+        {
+            Binding = Binding
+            Visibility = Visibility
+            Type = Type
+            HasDynamicOffset = false
+            MinBufferBindingSize = 0UL
+            Multisampled = false
+            ViewDimension = TextureViewDimension.Undefined
+            TextureComponentType = TextureComponentType.Float
+            StorageTextureFormat = TextureFormat.Undefined
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBindGroupLayoutEntry -> 'a) : 'a = 
         let x = x
         let _Binding = x.Binding
@@ -1313,6 +1373,13 @@ type BlendDescriptor =
         SrcFactor : BlendFactor
         DstFactor : BlendFactor
     }
+    static member Default : BlendDescriptor =
+        {
+            Operation = BlendOperation.Add
+            SrcFactor = BlendFactor.One
+            DstFactor = BlendFactor.Zero
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBlendDescriptor -> 'a) : 'a = 
         let x = x
         let _Operation = x.Operation
@@ -1329,6 +1396,7 @@ type BufferCopyView =
         Layout : TextureDataLayout
         Buffer : Buffer
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBufferCopyView -> 'a) : 'a = 
         let x = x
         x.Layout.Pin (fun _Layout ->
@@ -1347,10 +1415,17 @@ type BufferDescriptor =
         Size : uint64
         MappedAtCreation : bool
     }
+    static member Default(Usage: BufferUsage, Size: uint64) : BufferDescriptor =
+        {
+            Label = null
+            Usage = Usage
+            Size = Size
+            MappedAtCreation = false
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUBufferDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Usage = x.Usage
             let _Size = x.Size
             let _MappedAtCreation = (if x.MappedAtCreation then 1 else 0)
@@ -1361,8 +1436,15 @@ type BufferDescriptor =
             native.Size <- _Size
             native.MappedAtCreation <- _MappedAtCreation
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type Color =
     {
@@ -1371,6 +1453,7 @@ type Color =
         B : float32
         A : float32
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUColor -> 'a) : 'a = 
         let x = x
         let _R = x.R
@@ -1391,6 +1474,14 @@ type ColorStateDescriptor =
         ColorBlend : BlendDescriptor
         WriteMask : ColorWriteMask
     }
+    static member Default(Format: TextureFormat) : ColorStateDescriptor =
+        {
+            Format = Format
+            AlphaBlend = BlendDescriptor.Default
+            ColorBlend = BlendDescriptor.Default
+            WriteMask = ColorWriteMask.All
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUColorStateDescriptor -> 'a) : 'a = 
         let x = x
         let _Format = x.Format
@@ -1411,46 +1502,79 @@ type CommandBufferDescriptor =
     {
         Label : string
     }
+    static member Default : CommandBufferDescriptor =
+        {
+            Label = null
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUCommandBufferDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUCommandBufferDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type CommandEncoderDescriptor =
     {
         Label : string
     }
+    static member Default : CommandEncoderDescriptor =
+        {
+            Label = null
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUCommandEncoderDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUCommandEncoderDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type ComputePassDescriptor =
     {
         Label : string
     }
+    static member Default : ComputePassDescriptor =
+        {
+            Label = null
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUComputePassDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUComputePassDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type ComputePipelineDescriptor =
     {
@@ -1458,10 +1582,16 @@ type ComputePipelineDescriptor =
         Layout : PipelineLayout
         ComputeStage : ProgrammableStageDescriptor
     }
+    static member Default(Layout: PipelineLayout, ComputeStage: ProgrammableStageDescriptor) : ComputePipelineDescriptor =
+        {
+            Label = null
+            Layout = Layout
+            ComputeStage = ComputeStage
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUComputePipelineDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Layout = (if isNull x.Layout then PipelineLayoutHandle.Null else x.Layout.Handle)
             x.ComputeStage.Pin (fun _ComputeStage ->
                 let mutable native = Unchecked.defaultof<DawnRaw.WGPUComputePipelineDescriptor>
@@ -1471,8 +1601,15 @@ type ComputePipelineDescriptor =
                 native.ComputeStage <- _ComputeStage
                 callback native
             )
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type DepthStencilStateDescriptor =
     {
@@ -1484,6 +1621,17 @@ type DepthStencilStateDescriptor =
         StencilReadMask : int
         StencilWriteMask : int
     }
+    static member Default(Format: TextureFormat) : DepthStencilStateDescriptor =
+        {
+            Format = Format
+            DepthWriteEnabled = false
+            DepthCompare = CompareFunction.Always
+            StencilFront = StencilStateFaceDescriptor.Default
+            StencilBack = StencilStateFaceDescriptor.Default
+            StencilReadMask = -1
+            StencilWriteMask = -1
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUDepthStencilStateDescriptor -> 'a) : 'a = 
         let x = x
         let _Format = x.Format
@@ -1513,6 +1661,14 @@ type DeviceProperties =
         PipelineStatisticsQuery : bool
         TimestampQuery : bool
     }
+    static member Default : DeviceProperties =
+        {
+            TextureCompressionBC = false
+            ShaderFloat16 = false
+            PipelineStatisticsQuery = false
+            TimestampQuery = false
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUDeviceProperties -> 'a) : 'a = 
         let x = x
         let _TextureCompressionBC = (if x.TextureCompressionBC then 1 else 0)
@@ -1532,6 +1688,7 @@ type Extent3D =
         Height : int
         Depth : int
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUExtent3D -> 'a) : 'a = 
         let x = x
         let _Width = x.Width
@@ -1548,18 +1705,30 @@ type FenceDescriptor =
         Label : string
         InitialValue : uint64
     }
+    static member Default : FenceDescriptor =
+        {
+            Label = null
+            InitialValue = 0UL
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUFenceDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _InitialValue = x.InitialValue
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUFenceDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             native.InitialValue <- _InitialValue
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type InstanceDescriptor = 
     member x.Pin<'a>(callback : DawnRaw.WGPUInstanceDescriptor -> 'a) : 'a = 
@@ -1573,6 +1742,13 @@ type Origin3D =
         Y : int
         Z : int
     }
+    static member Default : Origin3D =
+        {
+            X = 0
+            Y = 0
+            Z = 0
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUOrigin3D -> 'a) : 'a = 
         let x = x
         let _X = x.X
@@ -1589,10 +1765,15 @@ type PipelineLayoutDescriptor =
         Label : string
         BindGroupLayouts : array<BindGroupLayout>
     }
+    static member Default(BindGroupLayouts: array<BindGroupLayout>) : PipelineLayoutDescriptor =
+        {
+            Label = null
+            BindGroupLayouts = BindGroupLayouts
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUPipelineLayoutDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             use _BindGroupLayouts = fixed (x.BindGroupLayouts |> Array.map (fun v -> if isNull v then BindGroupLayoutHandle.Null else v.Handle))
             let _BindGroupLayoutsCount = x.BindGroupLayouts.Length
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUPipelineLayoutDescriptor>
@@ -1601,53 +1782,89 @@ type PipelineLayoutDescriptor =
             native.BindGroupLayoutsCount <- _BindGroupLayoutsCount
             native.BindGroupLayouts <- _BindGroupLayouts
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type ProgrammableStageDescriptor =
     {
         Module : ShaderModule
         EntryPoint : string
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUProgrammableStageDescriptor -> 'a) : 'a = 
         let x = x
         let _Module = (if isNull x.Module then ShaderModuleHandle.Null else x.Module.Handle)
-        let _EntryPoint = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.EntryPoint
-        try
+        let inline _EntryPointCont (_EntryPoint) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUProgrammableStageDescriptor>
             native.Next <- 0n
             native.Module <- _Module
             native.EntryPoint <- _EntryPoint
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _EntryPoint
+        if not (isNull x.EntryPoint) then
+            let _EntryPointLen = System.Text.Encoding.UTF8.GetByteCount x.EntryPoint
+            let _EntryPointSize = _EntryPointLen + 1
+            let _EntryPointPtr = NativePtr.stackalloc<byte> _EntryPointSize
+            System.Text.Encoding.UTF8.GetBytes(x.EntryPoint.AsSpan(), Span<byte>(NativePtr.toVoidPtr _EntryPointPtr, _EntryPointSize)) |> ignore
+            NativePtr.set _EntryPointPtr _EntryPointLen 0uy
+            _EntryPointCont (NativePtr.toNativeInt _EntryPointPtr)
+        else
+            _EntryPointCont 0n
 [<Struct>]
 type QuerySetDescriptor =
     {
         Label : string
         Type : QueryType
         Count : int
-        PipelineStatistics : option<PipelineStatisticName>
+        PipelineStatistics : voption<PipelineStatisticName>
         PipelineStatisticsCount : int
     }
+    static member Default(Type: QueryType, Count: int, PipelineStatistics: voption<PipelineStatisticName>) : QuerySetDescriptor =
+        {
+            Label = null
+            Type = Type
+            Count = Count
+            PipelineStatistics = PipelineStatistics
+            PipelineStatisticsCount = 0
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUQuerySetDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Type = x.Type
             let _Count = x.Count
-            use _PipelineStatistics = fixed (x.PipelineStatistics |> Option.toArray)
-            let _PipelineStatisticsCount = x.PipelineStatisticsCount
-            let mutable native = Unchecked.defaultof<DawnRaw.WGPUQuerySetDescriptor>
-            native.Next <- 0n
-            native.Label <- _Label
-            native.Type <- _Type
-            native.Count <- _Count
-            native.PipelineStatistics <- _PipelineStatistics
-            native.PipelineStatisticsCount <- _PipelineStatisticsCount
-            callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+            let inline _PipelineStatisticsCont _PipelineStatistics =
+                let _PipelineStatisticsCount = x.PipelineStatisticsCount
+                let mutable native = Unchecked.defaultof<DawnRaw.WGPUQuerySetDescriptor>
+                native.Next <- 0n
+                native.Label <- _Label
+                native.Type <- _Type
+                native.Count <- _Count
+                native.PipelineStatistics <- _PipelineStatistics
+                native.PipelineStatisticsCount <- _PipelineStatisticsCount
+                callback native
+            match x.PipelineStatistics with
+            | ValueSome o ->
+                let _PipelineStatistics = NativePtr.stackalloc 1
+                NativePtr.write _PipelineStatistics o
+                _PipelineStatisticsCont _PipelineStatistics
+            | _ ->
+                _PipelineStatisticsCont (NativePtr.ofNativeInt 0n)
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type RasterizationStateDescriptor =
     {
@@ -1657,6 +1874,15 @@ type RasterizationStateDescriptor =
         DepthBiasSlopeScale : float32
         DepthBiasClamp : float32
     }
+    static member Default : RasterizationStateDescriptor =
+        {
+            FrontFace = FrontFace.CCW
+            CullMode = CullMode.None
+            DepthBias = 0
+            DepthBiasSlopeScale = 0.000000f
+            DepthBiasClamp = 0.000000f
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURasterizationStateDescriptor -> 'a) : 'a = 
         let x = x
         let _FrontFace = x.FrontFace
@@ -1677,16 +1903,27 @@ type RenderBundleDescriptor =
     {
         Label : string
     }
+    static member Default : RenderBundleDescriptor =
+        {
+            Label = null
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderBundleDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPURenderBundleDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type RenderBundleEncoderDescriptor =
     {
@@ -1695,10 +1932,17 @@ type RenderBundleEncoderDescriptor =
         DepthStencilFormat : TextureFormat
         SampleCount : int
     }
+    static member Default(ColorFormats: array<TextureFormat>) : RenderBundleEncoderDescriptor =
+        {
+            Label = null
+            ColorFormats = ColorFormats
+            DepthStencilFormat = TextureFormat.Undefined
+            SampleCount = 1
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderBundleEncoderDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             use _ColorFormats = fixed x.ColorFormats
             let _ColorFormatsCount = x.ColorFormats.Length
             let _DepthStencilFormat = x.DepthStencilFormat
@@ -1711,8 +1955,15 @@ type RenderBundleEncoderDescriptor =
             native.DepthStencilFormat <- _DepthStencilFormat
             native.SampleCount <- _SampleCount
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type RenderPassColorAttachmentDescriptor =
     {
@@ -1722,6 +1973,7 @@ type RenderPassColorAttachmentDescriptor =
         StoreOp : StoreOp
         ClearColor : Color
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderPassColorAttachmentDescriptor -> 'a) : 'a = 
         let x = x
         let _Attachment = (if isNull x.Attachment then TextureViewHandle.Null else x.Attachment.Handle)
@@ -1750,6 +2002,19 @@ type RenderPassDepthStencilAttachmentDescriptor =
         ClearStencil : int
         StencilReadOnly : bool
     }
+    static member Default(Attachment: TextureView, DepthLoadOp: LoadOp, DepthStoreOp: StoreOp, ClearDepth: float32, StencilLoadOp: LoadOp, StencilStoreOp: StoreOp) : RenderPassDepthStencilAttachmentDescriptor =
+        {
+            Attachment = Attachment
+            DepthLoadOp = DepthLoadOp
+            DepthStoreOp = DepthStoreOp
+            ClearDepth = ClearDepth
+            DepthReadOnly = false
+            StencilLoadOp = StencilLoadOp
+            StencilStoreOp = StencilStoreOp
+            ClearStencil = 0
+            StencilReadOnly = false
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderPassDepthStencilAttachmentDescriptor -> 'a) : 'a = 
         let x = x
         let _Attachment = (if isNull x.Attachment then TextureViewHandle.Null else x.Attachment.Handle)
@@ -1777,13 +2042,20 @@ type RenderPassDescriptor =
     {
         Label : string
         ColorAttachments : array<RenderPassColorAttachmentDescriptor>
-        DepthStencilAttachment : option<RenderPassDepthStencilAttachmentDescriptor>
+        DepthStencilAttachment : voption<RenderPassDepthStencilAttachmentDescriptor>
         OcclusionQuerySet : QuerySet
     }
+    static member Default(ColorAttachments: array<RenderPassColorAttachmentDescriptor>, DepthStencilAttachment: voption<RenderPassDepthStencilAttachmentDescriptor>, OcclusionQuerySet: QuerySet) : RenderPassDescriptor =
+        {
+            Label = null
+            ColorAttachments = ColorAttachments
+            DepthStencilAttachment = DepthStencilAttachment
+            OcclusionQuerySet = OcclusionQuerySet
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderPassDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _ColorAttachmentsCount = if isNull x.ColorAttachments then 0 else x.ColorAttachments.Length
             let rec _ColorAttachmentsCont (inputs : array<RenderPassColorAttachmentDescriptor>) (outputs : array<DawnRaw.WGPURenderPassColorAttachmentDescriptor>) (i : int) =
                 if i >= _ColorAttachmentsCount then
@@ -1799,33 +2071,60 @@ type RenderPassDescriptor =
                         native.OcclusionQuerySet <- _OcclusionQuerySet
                         callback native
                     match x.DepthStencilAttachment with
-                    | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DepthStencilAttachmentCont ptr)
-                    | None -> _DepthStencilAttachmentCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
+                    | ValueSome v ->
+                        v.Pin(fun n -> 
+                             let ptr = NativePtr.stackalloc 1
+                             NativePtr.write ptr n
+                             _DepthStencilAttachmentCont ptr
+                        )
+                    | ValueNone -> _DepthStencilAttachmentCont (NativePtr.ofNativeInt 0n)
                 else
                     inputs.[i].Pin(fun n -> outputs.[i] <- n; _ColorAttachmentsCont inputs outputs (i + 1))
             _ColorAttachmentsCont x.ColorAttachments (if _ColorAttachmentsCount > 0 then Array.zeroCreate _ColorAttachmentsCount else null) 0
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type RenderPipelineDescriptor =
     {
         Label : string
         Layout : PipelineLayout
         VertexStage : ProgrammableStageDescriptor
-        FragmentStage : option<ProgrammableStageDescriptor>
-        VertexState : option<VertexStateDescriptor>
+        FragmentStage : voption<ProgrammableStageDescriptor>
+        VertexState : voption<VertexStateDescriptor>
         PrimitiveTopology : PrimitiveTopology
-        RasterizationState : option<RasterizationStateDescriptor>
+        RasterizationState : voption<RasterizationStateDescriptor>
         SampleCount : int
-        DepthStencilState : option<DepthStencilStateDescriptor>
+        DepthStencilState : voption<DepthStencilStateDescriptor>
         ColorStates : array<ColorStateDescriptor>
         SampleMask : int
         AlphaToCoverageEnabled : bool
     }
+    static member Default(Layout: PipelineLayout, VertexStage: ProgrammableStageDescriptor, FragmentStage: voption<ProgrammableStageDescriptor>, VertexState: voption<VertexStateDescriptor>, PrimitiveTopology: PrimitiveTopology, RasterizationState: voption<RasterizationStateDescriptor>, DepthStencilState: voption<DepthStencilStateDescriptor>, ColorStates: array<ColorStateDescriptor>) : RenderPipelineDescriptor =
+        {
+            Label = null
+            Layout = Layout
+            VertexStage = VertexStage
+            FragmentStage = FragmentStage
+            VertexState = VertexState
+            PrimitiveTopology = PrimitiveTopology
+            RasterizationState = RasterizationState
+            SampleCount = 1
+            DepthStencilState = DepthStencilState
+            ColorStates = ColorStates
+            SampleMask = -1
+            AlphaToCoverageEnabled = false
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderPipelineDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Layout = (if isNull x.Layout then PipelineLayoutHandle.Null else x.Layout.Handle)
             x.VertexStage.Pin (fun _VertexStage ->
                 let inline _FragmentStageCont _FragmentStage = 
@@ -1860,25 +2159,53 @@ type RenderPipelineDescriptor =
                                         inputs.[i].Pin(fun n -> outputs.[i] <- n; _ColorStatesCont inputs outputs (i + 1))
                                 _ColorStatesCont x.ColorStates (if _ColorStatesCount > 0 then Array.zeroCreate _ColorStatesCount else null) 0
                             match x.DepthStencilState with
-                            | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DepthStencilStateCont ptr)
-                            | None -> _DepthStencilStateCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
+                            | ValueSome v ->
+                                v.Pin(fun n -> 
+                                     let ptr = NativePtr.stackalloc 1
+                                     NativePtr.write ptr n
+                                     _DepthStencilStateCont ptr
+                                )
+                            | ValueNone -> _DepthStencilStateCont (NativePtr.ofNativeInt 0n)
                         match x.RasterizationState with
-                        | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _RasterizationStateCont ptr)
-                        | None -> _RasterizationStateCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
+                        | ValueSome v ->
+                            v.Pin(fun n -> 
+                                 let ptr = NativePtr.stackalloc 1
+                                 NativePtr.write ptr n
+                                 _RasterizationStateCont ptr
+                            )
+                        | ValueNone -> _RasterizationStateCont (NativePtr.ofNativeInt 0n)
                     match x.VertexState with
-                    | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _VertexStateCont ptr)
-                    | None -> _VertexStateCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
+                    | ValueSome v ->
+                        v.Pin(fun n -> 
+                             let ptr = NativePtr.stackalloc 1
+                             NativePtr.write ptr n
+                             _VertexStateCont ptr
+                        )
+                    | ValueNone -> _VertexStateCont (NativePtr.ofNativeInt 0n)
                 match x.FragmentStage with
-                | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _FragmentStageCont ptr)
-                | None -> _FragmentStageCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
+                | ValueSome v ->
+                    v.Pin(fun n -> 
+                         let ptr = NativePtr.stackalloc 1
+                         NativePtr.write ptr n
+                         _FragmentStageCont ptr
+                    )
+                | ValueNone -> _FragmentStageCont (NativePtr.ofNativeInt 0n)
             )
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type RenderPipelineDescriptorDummyExtension =
     {
         DummyStage : ProgrammableStageDescriptor
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPURenderPipelineDescriptorDummyExtension -> 'a) : 'a = 
         let x = x
         x.DummyStage.Pin (fun _DummyStage ->
@@ -1900,10 +2227,23 @@ type SamplerDescriptor =
         LodMaxClamp : float32
         Compare : CompareFunction
     }
+    static member Default : SamplerDescriptor =
+        {
+            Label = null
+            AddressModeU = AddressMode.ClampToEdge
+            AddressModeV = AddressMode.ClampToEdge
+            AddressModeW = AddressMode.ClampToEdge
+            MagFilter = FilterMode.Nearest
+            MinFilter = FilterMode.Nearest
+            MipmapFilter = FilterMode.Nearest
+            LodMinClamp = 0.000000f
+            LodMaxClamp = 1000.000000f
+            Compare = CompareFunction.Undefined
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSamplerDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _AddressModeU = x.AddressModeU
             let _AddressModeV = x.AddressModeV
             let _AddressModeW = x.AddressModeW
@@ -1926,13 +2266,21 @@ type SamplerDescriptor =
             native.LodMaxClamp <- _LodMaxClamp
             native.Compare <- _Compare
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type SamplerDescriptorDummyAnisotropicFiltering =
     {
         MaxAnisotropy : float32
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSamplerDescriptorDummyAnisotropicFiltering -> 'a) : 'a = 
         let x = x
         let _MaxAnisotropy = x.MaxAnisotropy
@@ -1944,6 +2292,7 @@ type ShaderModuleSPIRVDescriptor =
     {
         Code : array<int>
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUShaderModuleSPIRVDescriptor -> 'a) : 'a = 
         let x = x
         use _Code = fixed x.Code
@@ -1957,30 +2306,48 @@ type ShaderModuleWGSLDescriptor =
     {
         Source : string
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUShaderModuleWGSLDescriptor -> 'a) : 'a = 
         let x = x
-        let _Source = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Source
-        try
+        let inline _SourceCont (_Source) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUShaderModuleWGSLDescriptor>
             native.Source <- _Source
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Source
+        if not (isNull x.Source) then
+            let _SourceLen = System.Text.Encoding.UTF8.GetByteCount x.Source
+            let _SourceSize = _SourceLen + 1
+            let _SourcePtr = NativePtr.stackalloc<byte> _SourceSize
+            System.Text.Encoding.UTF8.GetBytes(x.Source.AsSpan(), Span<byte>(NativePtr.toVoidPtr _SourcePtr, _SourceSize)) |> ignore
+            NativePtr.set _SourcePtr _SourceLen 0uy
+            _SourceCont (NativePtr.toNativeInt _SourcePtr)
+        else
+            _SourceCont 0n
 [<Struct>]
 type ShaderModuleDescriptor =
     {
         Label : string
     }
+    static member Default : ShaderModuleDescriptor =
+        {
+            Label = null
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUShaderModuleDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUShaderModuleDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type StencilStateFaceDescriptor =
     {
@@ -1989,6 +2356,14 @@ type StencilStateFaceDescriptor =
         DepthFailOp : StencilOperation
         PassOp : StencilOperation
     }
+    static member Default : StencilStateFaceDescriptor =
+        {
+            Compare = CompareFunction.Always
+            FailOp = StencilOperation.Keep
+            DepthFailOp = StencilOperation.Keep
+            PassOp = StencilOperation.Keep
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUStencilStateFaceDescriptor -> 'a) : 'a = 
         let x = x
         let _Compare = x.Compare
@@ -2006,35 +2381,54 @@ type SurfaceDescriptor =
     {
         Label : string
     }
+    static member Default : SurfaceDescriptor =
+        {
+            Label = null
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSurfaceDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUSurfaceDescriptor>
             native.Next <- 0n
             native.Label <- _Label
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type SurfaceDescriptorFromCanvasHTMLSelector =
     {
         Selector : string
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSurfaceDescriptorFromCanvasHTMLSelector -> 'a) : 'a = 
         let x = x
-        let _Selector = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Selector
-        try
+        let inline _SelectorCont (_Selector) = 
             let mutable native = Unchecked.defaultof<DawnRaw.WGPUSurfaceDescriptorFromCanvasHTMLSelector>
             native.Selector <- _Selector
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Selector
+        if not (isNull x.Selector) then
+            let _SelectorLen = System.Text.Encoding.UTF8.GetByteCount x.Selector
+            let _SelectorSize = _SelectorLen + 1
+            let _SelectorPtr = NativePtr.stackalloc<byte> _SelectorSize
+            System.Text.Encoding.UTF8.GetBytes(x.Selector.AsSpan(), Span<byte>(NativePtr.toVoidPtr _SelectorPtr, _SelectorSize)) |> ignore
+            NativePtr.set _SelectorPtr _SelectorLen 0uy
+            _SelectorCont (NativePtr.toNativeInt _SelectorPtr)
+        else
+            _SelectorCont 0n
 [<Struct>]
 type SurfaceDescriptorFromMetalLayer =
     {
         Layer : nativeint
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSurfaceDescriptorFromMetalLayer -> 'a) : 'a = 
         let x = x
         let _Layer = x.Layer
@@ -2047,6 +2441,7 @@ type SurfaceDescriptorFromWindowsHWND =
         Hinstance : nativeint
         Hwnd : nativeint
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSurfaceDescriptorFromWindowsHWND -> 'a) : 'a = 
         let x = x
         let _Hinstance = x.Hinstance
@@ -2061,6 +2456,7 @@ type SurfaceDescriptorFromXlib =
         Display : nativeint
         Window : int
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSurfaceDescriptorFromXlib -> 'a) : 'a = 
         let x = x
         let _Display = x.Display
@@ -2080,10 +2476,20 @@ type SwapChainDescriptor =
         PresentMode : PresentMode
         Implementation : uint64
     }
+    static member Default(Usage: TextureUsage, Format: TextureFormat, Width: int, Height: int, PresentMode: PresentMode) : SwapChainDescriptor =
+        {
+            Label = null
+            Usage = Usage
+            Format = Format
+            Width = Width
+            Height = Height
+            PresentMode = PresentMode
+            Implementation = 0UL
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUSwapChainDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Usage = x.Usage
             let _Format = x.Format
             let _Width = x.Width
@@ -2100,8 +2506,15 @@ type SwapChainDescriptor =
             native.PresentMode <- _PresentMode
             native.Implementation <- _Implementation
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type TextureCopyView =
     {
@@ -2110,6 +2523,14 @@ type TextureCopyView =
         Origin : Origin3D
         Aspect : TextureAspect
     }
+    static member Default(Texture: Texture) : TextureCopyView =
+        {
+            Texture = Texture
+            MipLevel = 0
+            Origin = Origin3D.Default
+            Aspect = TextureAspect.All
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUTextureCopyView -> 'a) : 'a = 
         let x = x
         let _Texture = (if isNull x.Texture then TextureHandle.Null else x.Texture.Handle)
@@ -2131,6 +2552,13 @@ type TextureDataLayout =
         BytesPerRow : int
         RowsPerImage : int
     }
+    static member Default(BytesPerRow: int) : TextureDataLayout =
+        {
+            Offset = 0UL
+            BytesPerRow = BytesPerRow
+            RowsPerImage = 0
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUTextureDataLayout -> 'a) : 'a = 
         let x = x
         let _Offset = x.Offset
@@ -2153,10 +2581,20 @@ type TextureDescriptor =
         MipLevelCount : int
         SampleCount : int
     }
+    static member Default(Usage: TextureUsage, Size: Extent3D, Format: TextureFormat) : TextureDescriptor =
+        {
+            Label = null
+            Usage = Usage
+            Dimension = TextureDimension.D2D
+            Size = Size
+            Format = Format
+            MipLevelCount = 1
+            SampleCount = 1
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUTextureDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Usage = x.Usage
             let _Dimension = x.Dimension
             x.Size.Pin (fun _Size ->
@@ -2174,8 +2612,15 @@ type TextureDescriptor =
                 native.SampleCount <- _SampleCount
                 callback native
             )
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type TextureViewDescriptor =
     {
@@ -2188,10 +2633,21 @@ type TextureViewDescriptor =
         ArrayLayerCount : int
         Aspect : TextureAspect
     }
+    static member Default : TextureViewDescriptor =
+        {
+            Label = null
+            Format = TextureFormat.Undefined
+            Dimension = TextureViewDimension.Undefined
+            BaseMipLevel = 0
+            MipLevelCount = 0
+            BaseArrayLayer = 0
+            ArrayLayerCount = 0
+            Aspect = TextureAspect.All
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUTextureViewDescriptor -> 'a) : 'a = 
         let x = x
-        let _Label = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi x.Label
-        try
+        let inline _LabelCont (_Label) = 
             let _Format = x.Format
             let _Dimension = x.Dimension
             let _BaseMipLevel = x.BaseMipLevel
@@ -2210,8 +2666,15 @@ type TextureViewDescriptor =
             native.ArrayLayerCount <- _ArrayLayerCount
             native.Aspect <- _Aspect
             callback native
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Label
+        if not (isNull x.Label) then
+            let _LabelLen = System.Text.Encoding.UTF8.GetByteCount x.Label
+            let _LabelSize = _LabelLen + 1
+            let _LabelPtr = NativePtr.stackalloc<byte> _LabelSize
+            System.Text.Encoding.UTF8.GetBytes(x.Label.AsSpan(), Span<byte>(NativePtr.toVoidPtr _LabelPtr, _LabelSize)) |> ignore
+            NativePtr.set _LabelPtr _LabelLen 0uy
+            _LabelCont (NativePtr.toNativeInt _LabelPtr)
+        else
+            _LabelCont 0n
 [<Struct>]
 type VertexAttributeDescriptor =
     {
@@ -2219,6 +2682,7 @@ type VertexAttributeDescriptor =
         Offset : uint64
         ShaderLocation : int
     }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUVertexAttributeDescriptor -> 'a) : 'a = 
         let x = x
         let _Format = x.Format
@@ -2236,6 +2700,13 @@ type VertexBufferLayoutDescriptor =
         StepMode : InputStepMode
         Attributes : array<VertexAttributeDescriptor>
     }
+    static member Default(ArrayStride: uint64, Attributes: array<VertexAttributeDescriptor>) : VertexBufferLayoutDescriptor =
+        {
+            ArrayStride = ArrayStride
+            StepMode = InputStepMode.Vertex
+            Attributes = Attributes
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUVertexBufferLayoutDescriptor -> 'a) : 'a = 
         let x = x
         let _ArrayStride = x.ArrayStride
@@ -2259,6 +2730,12 @@ type VertexStateDescriptor =
         IndexFormat : IndexFormat
         VertexBuffers : array<VertexBufferLayoutDescriptor>
     }
+    static member Default(VertexBuffers: array<VertexBufferLayoutDescriptor>) : VertexStateDescriptor =
+        {
+            IndexFormat = IndexFormat.Undefined
+            VertexBuffers = VertexBuffers
+        }
+
     member x.Pin<'a>(callback : DawnRaw.WGPUVertexStateDescriptor -> 'a) : 'a = 
         let x = x
         let _IndexFormat = x.IndexFormat
@@ -2279,669 +2756,1417 @@ type VertexStateDescriptor =
 
 [<AllowNullLiteral>]
 type BindGroup(device : Device, handle : BindGroupHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuBindGroupRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("BindGroup")
         DawnRaw.wgpuBindGroupReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuBindGroupRelease(handle)
+        new BindGroup(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuBindGroupReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuBindGroupRelease(x.Handle)
 [<AllowNullLiteral>]
 type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuBindGroupLayoutRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("BindGroupLayout")
         DawnRaw.wgpuBindGroupLayoutReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuBindGroupLayoutRelease(handle)
+        new BindGroupLayout(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuBindGroupLayoutReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuBindGroupLayoutRelease(x.Handle)
 [<AllowNullLiteral>]
 type Buffer(device : Device, handle : BufferHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuBufferRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Buffer")
         DawnRaw.wgpuBufferReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuBufferRelease(handle)
-    member x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback, Userdata : nativeint) : unit = 
+        new Buffer(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuBufferReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuBufferRelease(x.Handle)
+    member inline x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback) : unit = 
         let _Mode = Mode
         let _Offset = Offset
         let _Size = Size
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
-        let _CallbackCB = BufferMapCallback(fun Status Userdata -> Callback.Invoke(Status, Userdata); _CallbackGC.Free())
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackCB)
-        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackGC)
+        let _CallbackFunction (Status : BufferMapAsyncStatus) (Userdata : nativeint) = 
+            let _Status = Status
+            let _Userdata = Userdata
+            _CallbackGC.Free()
+            Callback.Invoke(_Status, _Userdata)
+        let _CallbackDel = WGPUBufferMapCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
+        let _Userdata = 0n
+        DawnRaw.wgpuBufferMapAsync(x.Handle, _Mode, _Offset, _Size, _Callback, _Userdata)
+    member inline x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback, Userdata : nativeint) : unit = 
+        let _Mode = Mode
+        let _Offset = Offset
+        let _Size = Size
+        let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
+        let _CallbackFunction (Status : BufferMapAsyncStatus) (Userdata : nativeint) = 
+            let _Status = Status
+            let _Userdata = Userdata
+            _CallbackGC.Free()
+            Callback.Invoke(_Status, _Userdata)
+        let _CallbackDel = WGPUBufferMapCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
-        DawnRaw.wgpuBufferMapAsync(handle, _Mode, _Offset, _Size, _Callback, _Userdata)
-    member x.GetMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
+        DawnRaw.wgpuBufferMapAsync(x.Handle, _Mode, _Offset, _Size, _Callback, _Userdata)
+    member inline x.GetMappedRange() : nativeint = 
+        let _Offset = 0un
+        let _Size = 0un
+        DawnRaw.wgpuBufferGetMappedRange(x.Handle, _Offset, _Size)
+    member inline x.GetMappedRange(Offset : unativeint) : nativeint = 
+        let _Offset = Offset
+        let _Size = 0un
+        DawnRaw.wgpuBufferGetMappedRange(x.Handle, _Offset, _Size)
+    member inline x.GetMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuBufferGetMappedRange(handle, _Offset, _Size)
-    member x.GetConstMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
+        DawnRaw.wgpuBufferGetMappedRange(x.Handle, _Offset, _Size)
+    member inline x.GetConstMappedRange() : nativeint = 
+        let _Offset = 0un
+        let _Size = 0un
+        DawnRaw.wgpuBufferGetConstMappedRange(x.Handle, _Offset, _Size)
+    member inline x.GetConstMappedRange(Offset : unativeint) : nativeint = 
+        let _Offset = Offset
+        let _Size = 0un
+        DawnRaw.wgpuBufferGetConstMappedRange(x.Handle, _Offset, _Size)
+    member inline x.GetConstMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuBufferGetConstMappedRange(handle, _Offset, _Size)
-    member x.Unmap() : unit = 
-        DawnRaw.wgpuBufferUnmap(handle)
-    member x.Destroy() : unit = 
-        DawnRaw.wgpuBufferDestroy(handle)
+        DawnRaw.wgpuBufferGetConstMappedRange(x.Handle, _Offset, _Size)
+    member inline x.Unmap() : unit = 
+        DawnRaw.wgpuBufferUnmap(x.Handle)
+    member inline x.Destroy() : unit = 
+        DawnRaw.wgpuBufferDestroy(x.Handle)
 [<AllowNullLiteral>]
 type CommandBuffer(device : Device, handle : CommandBufferHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuCommandBufferRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("CommandBuffer")
         DawnRaw.wgpuCommandBufferReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuCommandBufferRelease(handle)
+        new CommandBuffer(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuCommandBufferReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuCommandBufferRelease(x.Handle)
 [<AllowNullLiteral>]
 type CommandEncoder(device : Device, handle : CommandEncoderHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuCommandEncoderRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("CommandEncoder")
         DawnRaw.wgpuCommandEncoderReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuCommandEncoderRelease(handle)
-    member x.Finish(Descriptor : CommandBufferDescriptor) : CommandBuffer = 
-        Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            CommandBuffer(device, DawnRaw.wgpuCommandEncoderFinish(handle, _Descriptor))
+        new CommandEncoder(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuCommandEncoderReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuCommandEncoderRelease(x.Handle)
+    member inline x.Finish() : CommandBuffer = 
+        CommandBufferDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new CommandBuffer(x.Device, DawnRaw.wgpuCommandEncoderFinish(x.Handle, _Descriptor))
         )
-    member x.BeginComputePass(Descriptor : ComputePassDescriptor) : ComputePassEncoder = 
+    member inline x.Finish(Descriptor : CommandBufferDescriptor) : CommandBuffer = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            ComputePassEncoder(device, DawnRaw.wgpuCommandEncoderBeginComputePass(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new CommandBuffer(x.Device, DawnRaw.wgpuCommandEncoderFinish(x.Handle, _Descriptor))
         )
-    member x.BeginRenderPass(Descriptor : RenderPassDescriptor) : RenderPassEncoder = 
+    member inline x.BeginComputePass() : ComputePassEncoder = 
+        ComputePassDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new ComputePassEncoder(x.Device, DawnRaw.wgpuCommandEncoderBeginComputePass(x.Handle, _Descriptor))
+        )
+    member inline x.BeginComputePass(Descriptor : ComputePassDescriptor) : ComputePassEncoder = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            RenderPassEncoder(device, DawnRaw.wgpuCommandEncoderBeginRenderPass(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new ComputePassEncoder(x.Device, DawnRaw.wgpuCommandEncoderBeginComputePass(x.Handle, _Descriptor))
         )
-    member x.CopyBufferToBuffer(Source : Buffer, SourceOffset : uint64, Destination : Buffer, DestinationOffset : uint64, Size : uint64) : unit = 
+    member inline x.BeginRenderPass(Descriptor : RenderPassDescriptor) : RenderPassEncoder = 
+        Descriptor.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new RenderPassEncoder(x.Device, DawnRaw.wgpuCommandEncoderBeginRenderPass(x.Handle, _Descriptor))
+        )
+    member inline x.CopyBufferToBuffer(Source : Buffer, SourceOffset : uint64, Destination : Buffer, DestinationOffset : uint64, Size : uint64) : unit = 
         let _Source = (if isNull Source then BufferHandle.Null else Source.Handle)
         let _SourceOffset = SourceOffset
         let _Destination = (if isNull Destination then BufferHandle.Null else Destination.Handle)
         let _DestinationOffset = DestinationOffset
         let _Size = Size
-        DawnRaw.wgpuCommandEncoderCopyBufferToBuffer(handle, _Source, _SourceOffset, _Destination, _DestinationOffset, _Size)
-    member x.CopyBufferToTexture(Source : option<BufferCopyView>, Destination : option<TextureCopyView>, CopySize : option<Extent3D>) : unit = 
-        let inline _SourceCont _Source = 
-            let inline _DestinationCont _Destination = 
-                let inline _CopySizeCont _CopySize = 
-                    DawnRaw.wgpuCommandEncoderCopyBufferToTexture(handle, _Source, _Destination, _CopySize)
-                match CopySize with
-                | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _CopySizeCont ptr)
-                | None -> _CopySizeCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-            match Destination with
-            | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DestinationCont ptr)
-            | None -> _DestinationCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-        match Source with
-        | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _SourceCont ptr)
-        | None -> _SourceCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-    member x.CopyTextureToBuffer(Source : option<TextureCopyView>, Destination : option<BufferCopyView>, CopySize : option<Extent3D>) : unit = 
-        let inline _SourceCont _Source = 
-            let inline _DestinationCont _Destination = 
-                let inline _CopySizeCont _CopySize = 
-                    DawnRaw.wgpuCommandEncoderCopyTextureToBuffer(handle, _Source, _Destination, _CopySize)
-                match CopySize with
-                | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _CopySizeCont ptr)
-                | None -> _CopySizeCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-            match Destination with
-            | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DestinationCont ptr)
-            | None -> _DestinationCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-        match Source with
-        | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _SourceCont ptr)
-        | None -> _SourceCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-    member x.CopyTextureToTexture(Source : option<TextureCopyView>, Destination : option<TextureCopyView>, CopySize : option<Extent3D>) : unit = 
-        let inline _SourceCont _Source = 
-            let inline _DestinationCont _Destination = 
-                let inline _CopySizeCont _CopySize = 
-                    DawnRaw.wgpuCommandEncoderCopyTextureToTexture(handle, _Source, _Destination, _CopySize)
-                match CopySize with
-                | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _CopySizeCont ptr)
-                | None -> _CopySizeCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-            match Destination with
-            | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DestinationCont ptr)
-            | None -> _DestinationCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-        match Source with
-        | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _SourceCont ptr)
-        | None -> _SourceCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
-        let _MarkerLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi MarkerLabel
-        try
-            DawnRaw.wgpuCommandEncoderInsertDebugMarker(handle, _MarkerLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _MarkerLabel
-    member x.PopDebugGroup() : unit = 
-        DawnRaw.wgpuCommandEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : string) : unit = 
-        let _GroupLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi GroupLabel
-        try
-            DawnRaw.wgpuCommandEncoderPushDebugGroup(handle, _GroupLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _GroupLabel
-    member x.ResolveQuerySet(QuerySet : QuerySet, FirstQuery : int, QueryCount : int, Destination : Buffer, DestinationOffset : uint64) : unit = 
+        DawnRaw.wgpuCommandEncoderCopyBufferToBuffer(x.Handle, _Source, _SourceOffset, _Destination, _DestinationOffset, _Size)
+    member inline x.CopyBufferToTexture(Source : BufferCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit = 
+        Source.Pin (fun _SourceValue ->
+            let _Source = NativePtr.stackalloc 1
+            NativePtr.write _Source _SourceValue
+            Destination.Pin (fun _DestinationValue ->
+                let _Destination = NativePtr.stackalloc 1
+                NativePtr.write _Destination _DestinationValue
+                CopySize.Pin (fun _CopySizeValue ->
+                    let _CopySize = NativePtr.stackalloc 1
+                    NativePtr.write _CopySize _CopySizeValue
+                    DawnRaw.wgpuCommandEncoderCopyBufferToTexture(x.Handle, _Source, _Destination, _CopySize)
+                )
+            )
+        )
+    member inline x.CopyTextureToBuffer(Source : TextureCopyView, Destination : BufferCopyView, CopySize : Extent3D) : unit = 
+        Source.Pin (fun _SourceValue ->
+            let _Source = NativePtr.stackalloc 1
+            NativePtr.write _Source _SourceValue
+            Destination.Pin (fun _DestinationValue ->
+                let _Destination = NativePtr.stackalloc 1
+                NativePtr.write _Destination _DestinationValue
+                CopySize.Pin (fun _CopySizeValue ->
+                    let _CopySize = NativePtr.stackalloc 1
+                    NativePtr.write _CopySize _CopySizeValue
+                    DawnRaw.wgpuCommandEncoderCopyTextureToBuffer(x.Handle, _Source, _Destination, _CopySize)
+                )
+            )
+        )
+    member inline x.CopyTextureToTexture(Source : TextureCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit = 
+        Source.Pin (fun _SourceValue ->
+            let _Source = NativePtr.stackalloc 1
+            NativePtr.write _Source _SourceValue
+            Destination.Pin (fun _DestinationValue ->
+                let _Destination = NativePtr.stackalloc 1
+                NativePtr.write _Destination _DestinationValue
+                CopySize.Pin (fun _CopySizeValue ->
+                    let _CopySize = NativePtr.stackalloc 1
+                    NativePtr.write _CopySize _CopySizeValue
+                    DawnRaw.wgpuCommandEncoderCopyTextureToTexture(x.Handle, _Source, _Destination, _CopySize)
+                )
+            )
+        )
+    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+        let inline _MarkerLabelCont (_MarkerLabel) = 
+            DawnRaw.wgpuCommandEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
+        if not (isNull MarkerLabel) then
+            let _MarkerLabelLen = System.Text.Encoding.UTF8.GetByteCount MarkerLabel
+            let _MarkerLabelSize = _MarkerLabelLen + 1
+            let _MarkerLabelPtr = NativePtr.stackalloc<byte> _MarkerLabelSize
+            System.Text.Encoding.UTF8.GetBytes(MarkerLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _MarkerLabelPtr, _MarkerLabelSize)) |> ignore
+            NativePtr.set _MarkerLabelPtr _MarkerLabelLen 0uy
+            _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
+        else
+            _MarkerLabelCont 0n
+    member inline x.PopDebugGroup() : unit = 
+        DawnRaw.wgpuCommandEncoderPopDebugGroup(x.Handle)
+    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+        let inline _GroupLabelCont (_GroupLabel) = 
+            DawnRaw.wgpuCommandEncoderPushDebugGroup(x.Handle, _GroupLabel)
+        if not (isNull GroupLabel) then
+            let _GroupLabelLen = System.Text.Encoding.UTF8.GetByteCount GroupLabel
+            let _GroupLabelSize = _GroupLabelLen + 1
+            let _GroupLabelPtr = NativePtr.stackalloc<byte> _GroupLabelSize
+            System.Text.Encoding.UTF8.GetBytes(GroupLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _GroupLabelPtr, _GroupLabelSize)) |> ignore
+            NativePtr.set _GroupLabelPtr _GroupLabelLen 0uy
+            _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
+        else
+            _GroupLabelCont 0n
+    member inline x.ResolveQuerySet(QuerySet : QuerySet, FirstQuery : int, QueryCount : int, Destination : Buffer, DestinationOffset : uint64) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _FirstQuery = FirstQuery
         let _QueryCount = QueryCount
         let _Destination = (if isNull Destination then BufferHandle.Null else Destination.Handle)
         let _DestinationOffset = DestinationOffset
-        DawnRaw.wgpuCommandEncoderResolveQuerySet(handle, _QuerySet, _FirstQuery, _QueryCount, _Destination, _DestinationOffset)
-    member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
+        DawnRaw.wgpuCommandEncoderResolveQuerySet(x.Handle, _QuerySet, _FirstQuery, _QueryCount, _Destination, _DestinationOffset)
+    member inline x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _QueryIndex = QueryIndex
-        DawnRaw.wgpuCommandEncoderWriteTimestamp(handle, _QuerySet, _QueryIndex)
+        DawnRaw.wgpuCommandEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
 [<AllowNullLiteral>]
 type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuComputePassEncoderRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("ComputePassEncoder")
         DawnRaw.wgpuComputePassEncoderReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuComputePassEncoderRelease(handle)
-    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
-        let _MarkerLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi MarkerLabel
-        try
-            DawnRaw.wgpuComputePassEncoderInsertDebugMarker(handle, _MarkerLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _MarkerLabel
-    member x.PopDebugGroup() : unit = 
-        DawnRaw.wgpuComputePassEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : string) : unit = 
-        let _GroupLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi GroupLabel
-        try
-            DawnRaw.wgpuComputePassEncoderPushDebugGroup(handle, _GroupLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _GroupLabel
-    member x.SetPipeline(Pipeline : ComputePipeline) : unit = 
+        new ComputePassEncoder(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuComputePassEncoderReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuComputePassEncoderRelease(x.Handle)
+    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+        let inline _MarkerLabelCont (_MarkerLabel) = 
+            DawnRaw.wgpuComputePassEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
+        if not (isNull MarkerLabel) then
+            let _MarkerLabelLen = System.Text.Encoding.UTF8.GetByteCount MarkerLabel
+            let _MarkerLabelSize = _MarkerLabelLen + 1
+            let _MarkerLabelPtr = NativePtr.stackalloc<byte> _MarkerLabelSize
+            System.Text.Encoding.UTF8.GetBytes(MarkerLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _MarkerLabelPtr, _MarkerLabelSize)) |> ignore
+            NativePtr.set _MarkerLabelPtr _MarkerLabelLen 0uy
+            _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
+        else
+            _MarkerLabelCont 0n
+    member inline x.PopDebugGroup() : unit = 
+        DawnRaw.wgpuComputePassEncoderPopDebugGroup(x.Handle)
+    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+        let inline _GroupLabelCont (_GroupLabel) = 
+            DawnRaw.wgpuComputePassEncoderPushDebugGroup(x.Handle, _GroupLabel)
+        if not (isNull GroupLabel) then
+            let _GroupLabelLen = System.Text.Encoding.UTF8.GetByteCount GroupLabel
+            let _GroupLabelSize = _GroupLabelLen + 1
+            let _GroupLabelPtr = NativePtr.stackalloc<byte> _GroupLabelSize
+            System.Text.Encoding.UTF8.GetBytes(GroupLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _GroupLabelPtr, _GroupLabelSize)) |> ignore
+            NativePtr.set _GroupLabelPtr _GroupLabelLen 0uy
+            _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
+        else
+            _GroupLabelCont 0n
+    member inline x.SetPipeline(Pipeline : ComputePipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then ComputePipelineHandle.Null else Pipeline.Handle)
-        DawnRaw.wgpuComputePassEncoderSetPipeline(handle, _Pipeline)
-    member x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
+        DawnRaw.wgpuComputePassEncoderSetPipeline(x.Handle, _Pipeline)
+    member inline x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
         let _GroupIndex = GroupIndex
         let _Group = (if isNull Group then BindGroupHandle.Null else Group.Handle)
         use _DynamicOffsets = fixed DynamicOffsets
         let _DynamicOffsetsCount = DynamicOffsets.Length
-        DawnRaw.wgpuComputePassEncoderSetBindGroup(handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
-    member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
+        DawnRaw.wgpuComputePassEncoderSetBindGroup(x.Handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
+    member inline x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _QueryIndex = QueryIndex
-        DawnRaw.wgpuComputePassEncoderWriteTimestamp(handle, _QuerySet, _QueryIndex)
-    member x.Dispatch(X : int, Y : int, Z : int) : unit = 
+        DawnRaw.wgpuComputePassEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
+    member inline x.Dispatch(X : int) : unit = 
+        let _X = X
+        let _Y = 1
+        let _Z = 1
+        DawnRaw.wgpuComputePassEncoderDispatch(x.Handle, _X, _Y, _Z)
+    member inline x.Dispatch(X : int, Y : int) : unit = 
+        let _X = X
+        let _Y = Y
+        let _Z = 1
+        DawnRaw.wgpuComputePassEncoderDispatch(x.Handle, _X, _Y, _Z)
+    member inline x.Dispatch(X : int, Y : int, Z : int) : unit = 
         let _X = X
         let _Y = Y
         let _Z = Z
-        DawnRaw.wgpuComputePassEncoderDispatch(handle, _X, _Y, _Z)
-    member x.DispatchIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+        DawnRaw.wgpuComputePassEncoderDispatch(x.Handle, _X, _Y, _Z)
+    member inline x.DispatchIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
-        DawnRaw.wgpuComputePassEncoderDispatchIndirect(handle, _IndirectBuffer, _IndirectOffset)
-    member x.EndPass() : unit = 
-        DawnRaw.wgpuComputePassEncoderEndPass(handle)
+        DawnRaw.wgpuComputePassEncoderDispatchIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
+    member inline x.EndPass() : unit = 
+        DawnRaw.wgpuComputePassEncoderEndPass(x.Handle)
 [<AllowNullLiteral>]
 type ComputePipeline(device : Device, handle : ComputePipelineHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuComputePipelineRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("ComputePipeline")
         DawnRaw.wgpuComputePipelineReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuComputePipelineRelease(handle)
-    member x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
+        new ComputePipeline(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuComputePipelineReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuComputePipelineRelease(x.Handle)
+    member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
-        BindGroupLayout(device, DawnRaw.wgpuComputePipelineGetBindGroupLayout(handle, _GroupIndex))
+        new BindGroupLayout(x.Device, DawnRaw.wgpuComputePipelineGetBindGroupLayout(x.Handle, _GroupIndex))
 [<AllowNullLiteral>]
 type Device(handle : DeviceHandle) = 
+    let mutable isDisposed = false
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuDeviceRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Device")
         DawnRaw.wgpuDeviceReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuDeviceRelease(handle)
-    member x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup = 
+        new Device(handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuDeviceReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuDeviceRelease(x.Handle)
+    member inline x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            BindGroup(x, DawnRaw.wgpuDeviceCreateBindGroup(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new BindGroup(x, DawnRaw.wgpuDeviceCreateBindGroup(x.Handle, _Descriptor))
         )
-    member x.CreateBindGroupLayout(Descriptor : BindGroupLayoutDescriptor) : BindGroupLayout = 
+    member inline x.CreateBindGroupLayout(Descriptor : BindGroupLayoutDescriptor) : BindGroupLayout = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            BindGroupLayout(x, DawnRaw.wgpuDeviceCreateBindGroupLayout(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new BindGroupLayout(x, DawnRaw.wgpuDeviceCreateBindGroupLayout(x.Handle, _Descriptor))
         )
-    member x.CreateBuffer(Descriptor : BufferDescriptor) : Buffer = 
+    member inline x.CreateBuffer(Descriptor : BufferDescriptor) : Buffer = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            Buffer(x, DawnRaw.wgpuDeviceCreateBuffer(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Buffer(x, DawnRaw.wgpuDeviceCreateBuffer(x.Handle, _Descriptor))
         )
-    member x.CreateErrorBuffer() : Buffer = 
-        Buffer(x, DawnRaw.wgpuDeviceCreateErrorBuffer(handle))
-    member x.CreateCommandEncoder(Descriptor : CommandEncoderDescriptor) : CommandEncoder = 
+    member inline x.CreateErrorBuffer() : Buffer = 
+        new Buffer(x, DawnRaw.wgpuDeviceCreateErrorBuffer(x.Handle))
+    member inline x.CreateCommandEncoder() : CommandEncoder = 
+        CommandEncoderDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new CommandEncoder(x, DawnRaw.wgpuDeviceCreateCommandEncoder(x.Handle, _Descriptor))
+        )
+    member inline x.CreateCommandEncoder(Descriptor : CommandEncoderDescriptor) : CommandEncoder = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            CommandEncoder(x, DawnRaw.wgpuDeviceCreateCommandEncoder(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new CommandEncoder(x, DawnRaw.wgpuDeviceCreateCommandEncoder(x.Handle, _Descriptor))
         )
-    member x.CreateComputePipeline(Descriptor : ComputePipelineDescriptor) : ComputePipeline = 
+    member inline x.CreateComputePipeline(Descriptor : ComputePipelineDescriptor) : ComputePipeline = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            ComputePipeline(x, DawnRaw.wgpuDeviceCreateComputePipeline(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new ComputePipeline(x, DawnRaw.wgpuDeviceCreateComputePipeline(x.Handle, _Descriptor))
         )
-    member x.CreatePipelineLayout(Descriptor : PipelineLayoutDescriptor) : PipelineLayout = 
+    member inline x.CreatePipelineLayout(Descriptor : PipelineLayoutDescriptor) : PipelineLayout = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            PipelineLayout(x, DawnRaw.wgpuDeviceCreatePipelineLayout(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new PipelineLayout(x, DawnRaw.wgpuDeviceCreatePipelineLayout(x.Handle, _Descriptor))
         )
-    member x.CreateQuerySet(Descriptor : QuerySetDescriptor) : QuerySet = 
+    member inline x.CreateQuerySet(Descriptor : QuerySetDescriptor) : QuerySet = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            QuerySet(x, DawnRaw.wgpuDeviceCreateQuerySet(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new QuerySet(x, DawnRaw.wgpuDeviceCreateQuerySet(x.Handle, _Descriptor))
         )
-    member x.CreateRenderBundleEncoder(Descriptor : RenderBundleEncoderDescriptor) : RenderBundleEncoder = 
+    member inline x.CreateRenderBundleEncoder(Descriptor : RenderBundleEncoderDescriptor) : RenderBundleEncoder = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            RenderBundleEncoder(x, DawnRaw.wgpuDeviceCreateRenderBundleEncoder(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new RenderBundleEncoder(x, DawnRaw.wgpuDeviceCreateRenderBundleEncoder(x.Handle, _Descriptor))
         )
-    member x.CreateRenderPipeline(Descriptor : RenderPipelineDescriptor) : RenderPipeline = 
+    member inline x.CreateRenderPipeline(Descriptor : RenderPipelineDescriptor) : RenderPipeline = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            RenderPipeline(x, DawnRaw.wgpuDeviceCreateRenderPipeline(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new RenderPipeline(x, DawnRaw.wgpuDeviceCreateRenderPipeline(x.Handle, _Descriptor))
         )
-    member x.CreateSampler(Descriptor : SamplerDescriptor) : Sampler = 
+    member inline x.CreateSampler() : Sampler = 
+        SamplerDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Sampler(x, DawnRaw.wgpuDeviceCreateSampler(x.Handle, _Descriptor))
+        )
+    member inline x.CreateSampler(Descriptor : SamplerDescriptor) : Sampler = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            Sampler(x, DawnRaw.wgpuDeviceCreateSampler(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Sampler(x, DawnRaw.wgpuDeviceCreateSampler(x.Handle, _Descriptor))
         )
-    member x.CreateShaderModule(Descriptor : ShaderModuleDescriptor) : ShaderModule = 
+    member inline x.CreateShaderModule() : ShaderModule = 
+        ShaderModuleDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new ShaderModule(x, DawnRaw.wgpuDeviceCreateShaderModule(x.Handle, _Descriptor))
+        )
+    member inline x.CreateShaderModule(Descriptor : ShaderModuleDescriptor) : ShaderModule = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            ShaderModule(x, DawnRaw.wgpuDeviceCreateShaderModule(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new ShaderModule(x, DawnRaw.wgpuDeviceCreateShaderModule(x.Handle, _Descriptor))
         )
-    member x.CreateSwapChain(Surface : Surface, Descriptor : SwapChainDescriptor) : SwapChain = 
+    member inline x.CreateSwapChain(Surface : Surface, Descriptor : SwapChainDescriptor) : SwapChain = 
         let _Surface = (if isNull Surface then SurfaceHandle.Null else Surface.Handle)
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            SwapChain(x, DawnRaw.wgpuDeviceCreateSwapChain(handle, _Surface, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new SwapChain(x, DawnRaw.wgpuDeviceCreateSwapChain(x.Handle, _Surface, _Descriptor))
         )
-    member x.CreateTexture(Descriptor : TextureDescriptor) : Texture = 
+    member inline x.CreateTexture(Descriptor : TextureDescriptor) : Texture = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            Texture(x, DawnRaw.wgpuDeviceCreateTexture(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Texture(x, DawnRaw.wgpuDeviceCreateTexture(x.Handle, _Descriptor))
         )
-    member x.GetDefaultQueue() : Queue = 
-        Queue(x, DawnRaw.wgpuDeviceGetDefaultQueue(handle))
-    member x.InjectError(Type : ErrorType, Message : string) : unit = 
+    member inline x.GetDefaultQueue() : Queue = 
+        new Queue(x, DawnRaw.wgpuDeviceGetDefaultQueue(x.Handle))
+    member inline x.InjectError(Type : ErrorType, Message : string) : unit = 
         let _Type = Type
-        let _Message = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi Message
-        try
-            DawnRaw.wgpuDeviceInjectError(handle, _Type, _Message)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _Message
-    member x.LoseForTesting() : unit = 
-        DawnRaw.wgpuDeviceLoseForTesting(handle)
-    member x.Tick() : unit = 
-        DawnRaw.wgpuDeviceTick(handle)
-    member x.SetUncapturedErrorCallback(Callback : ErrorCallback, Userdata : nativeint) : unit = 
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(Callback)
-        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(Callback)
+        let inline _MessageCont (_Message) = 
+            DawnRaw.wgpuDeviceInjectError(x.Handle, _Type, _Message)
+        if not (isNull Message) then
+            let _MessageLen = System.Text.Encoding.UTF8.GetByteCount Message
+            let _MessageSize = _MessageLen + 1
+            let _MessagePtr = NativePtr.stackalloc<byte> _MessageSize
+            System.Text.Encoding.UTF8.GetBytes(Message.AsSpan(), Span<byte>(NativePtr.toVoidPtr _MessagePtr, _MessageSize)) |> ignore
+            NativePtr.set _MessagePtr _MessageLen 0uy
+            _MessageCont (NativePtr.toNativeInt _MessagePtr)
+        else
+            _MessageCont 0n
+    member inline x.LoseForTesting() : unit = 
+        DawnRaw.wgpuDeviceLoseForTesting(x.Handle)
+    member inline x.Tick() : unit = 
+        DawnRaw.wgpuDeviceTick(x.Handle)
+    member inline x.SetUncapturedErrorCallback(Callback : ErrorCallback) : unit = 
+        let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
+            let _Type = Type
+            let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
+            let _Userdata = Userdata
+            Callback.Invoke(_Type, _Message, _Userdata)
+        let _CallbackDel = WGPUErrorCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
+        let _Userdata = 0n
+        DawnRaw.wgpuDeviceSetUncapturedErrorCallback(x.Handle, _Callback, _Userdata)
+    member inline x.SetUncapturedErrorCallback(Callback : ErrorCallback, Userdata : nativeint) : unit = 
+        let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
+            let _Type = Type
+            let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
+            let _Userdata = Userdata
+            Callback.Invoke(_Type, _Message, _Userdata)
+        let _CallbackDel = WGPUErrorCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
-        DawnRaw.wgpuDeviceSetUncapturedErrorCallback(handle, _Callback, _Userdata)
-    member x.SetDeviceLostCallback(Callback : DeviceLostCallback, Userdata : nativeint) : unit = 
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(Callback)
-        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(Callback)
+        DawnRaw.wgpuDeviceSetUncapturedErrorCallback(x.Handle, _Callback, _Userdata)
+    member inline x.SetDeviceLostCallback(Callback : DeviceLostCallback) : unit = 
+        let _CallbackFunction (Message : nativeint) (Userdata : nativeint) = 
+            let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
+            let _Userdata = Userdata
+            Callback.Invoke(_Message, _Userdata)
+        let _CallbackDel = WGPUDeviceLostCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
+        let _Userdata = 0n
+        DawnRaw.wgpuDeviceSetDeviceLostCallback(x.Handle, _Callback, _Userdata)
+    member inline x.SetDeviceLostCallback(Callback : DeviceLostCallback, Userdata : nativeint) : unit = 
+        let _CallbackFunction (Message : nativeint) (Userdata : nativeint) = 
+            let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
+            let _Userdata = Userdata
+            Callback.Invoke(_Message, _Userdata)
+        let _CallbackDel = WGPUDeviceLostCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
-        DawnRaw.wgpuDeviceSetDeviceLostCallback(handle, _Callback, _Userdata)
-    member x.PushErrorScope(Filter : ErrorFilter) : unit = 
+        DawnRaw.wgpuDeviceSetDeviceLostCallback(x.Handle, _Callback, _Userdata)
+    member inline x.PushErrorScope(Filter : ErrorFilter) : unit = 
         let _Filter = Filter
-        DawnRaw.wgpuDevicePushErrorScope(handle, _Filter)
-    member x.PopErrorScope(Callback : ErrorCallback, Userdata : nativeint) : bool = 
+        DawnRaw.wgpuDevicePushErrorScope(x.Handle, _Filter)
+    member inline x.PopErrorScope(Callback : ErrorCallback) : bool = 
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
-        let _CallbackCB = ErrorCallback(fun Type Message Userdata -> Callback.Invoke(Type, Message, Userdata); _CallbackGC.Free())
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackCB)
-        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackGC)
+        let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
+            let _Type = Type
+            let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
+            let _Userdata = Userdata
+            _CallbackGC.Free()
+            Callback.Invoke(_Type, _Message, _Userdata)
+        let _CallbackDel = WGPUErrorCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
+        let _Userdata = 0n
+        DawnRaw.wgpuDevicePopErrorScope(x.Handle, _Callback, _Userdata) <> 0
+    member inline x.PopErrorScope(Callback : ErrorCallback, Userdata : nativeint) : bool = 
+        let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
+        let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
+            let _Type = Type
+            let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
+            let _Userdata = Userdata
+            _CallbackGC.Free()
+            Callback.Invoke(_Type, _Message, _Userdata)
+        let _CallbackDel = WGPUErrorCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
-        DawnRaw.wgpuDevicePopErrorScope(handle, _Callback, _Userdata) <> 0
+        DawnRaw.wgpuDevicePopErrorScope(x.Handle, _Callback, _Userdata) <> 0
 [<AllowNullLiteral>]
 type Fence(device : Device, handle : FenceHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuFenceRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Fence")
         DawnRaw.wgpuFenceReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuFenceRelease(handle)
-    member x.GetCompletedValue() : uint64 = 
-        DawnRaw.wgpuFenceGetCompletedValue(handle)
-    member x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback, Userdata : nativeint) : unit = 
+        new Fence(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuFenceReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuFenceRelease(x.Handle)
+    member inline x.GetCompletedValue() : uint64 = 
+        DawnRaw.wgpuFenceGetCompletedValue(x.Handle)
+    member inline x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback) : unit = 
         let _Value = Value
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
-        let _CallbackCB = FenceOnCompletionCallback(fun Status Userdata -> Callback.Invoke(Status, Userdata); _CallbackGC.Free())
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackCB)
-        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackGC)
+        let _CallbackFunction (Status : FenceCompletionStatus) (Userdata : nativeint) = 
+            let _Status = Status
+            let _Userdata = Userdata
+            _CallbackGC.Free()
+            Callback.Invoke(_Status, _Userdata)
+        let _CallbackDel = WGPUFenceOnCompletionCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
+        let _Userdata = 0n
+        DawnRaw.wgpuFenceOnCompletion(x.Handle, _Value, _Callback, _Userdata)
+    member inline x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback, Userdata : nativeint) : unit = 
+        let _Value = Value
+        let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
+        let _CallbackFunction (Status : FenceCompletionStatus) (Userdata : nativeint) = 
+            let _Status = Status
+            let _Userdata = Userdata
+            _CallbackGC.Free()
+            Callback.Invoke(_Status, _Userdata)
+        let _CallbackDel = WGPUFenceOnCompletionCallback(_CallbackFunction)
+        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
-        DawnRaw.wgpuFenceOnCompletion(handle, _Value, _Callback, _Userdata)
+        DawnRaw.wgpuFenceOnCompletion(x.Handle, _Value, _Callback, _Userdata)
 [<AllowNullLiteral>]
 type Instance(device : Device, handle : InstanceHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuInstanceRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Instance")
         DawnRaw.wgpuInstanceReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuInstanceRelease(handle)
-    member x.CreateSurface(Descriptor : SurfaceDescriptor) : Surface = 
+        new Instance(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuInstanceReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuInstanceRelease(x.Handle)
+    member inline x.CreateSurface() : Surface = 
+        SurfaceDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Surface(x.Device, DawnRaw.wgpuInstanceCreateSurface(x.Handle, _Descriptor))
+        )
+    member inline x.CreateSurface(Descriptor : SurfaceDescriptor) : Surface = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            Surface(device, DawnRaw.wgpuInstanceCreateSurface(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Surface(x.Device, DawnRaw.wgpuInstanceCreateSurface(x.Handle, _Descriptor))
         )
 [<AllowNullLiteral>]
 type PipelineLayout(device : Device, handle : PipelineLayoutHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuPipelineLayoutRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("PipelineLayout")
         DawnRaw.wgpuPipelineLayoutReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuPipelineLayoutRelease(handle)
+        new PipelineLayout(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuPipelineLayoutReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuPipelineLayoutRelease(x.Handle)
 [<AllowNullLiteral>]
 type QuerySet(device : Device, handle : QuerySetHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuQuerySetRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("QuerySet")
         DawnRaw.wgpuQuerySetReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuQuerySetRelease(handle)
-    member x.Destroy() : unit = 
-        DawnRaw.wgpuQuerySetDestroy(handle)
+        new QuerySet(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuQuerySetReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuQuerySetRelease(x.Handle)
+    member inline x.Destroy() : unit = 
+        DawnRaw.wgpuQuerySetDestroy(x.Handle)
 [<AllowNullLiteral>]
 type Queue(device : Device, handle : QueueHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuQueueRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Queue")
         DawnRaw.wgpuQueueReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuQueueRelease(handle)
-    member x.Submit(Commands : array<CommandBuffer>) : unit = 
+        new Queue(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuQueueReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuQueueRelease(x.Handle)
+    member inline x.Submit(Commands : array<CommandBuffer>) : unit = 
         use _Commands = fixed (Commands |> Array.map (fun v -> if isNull v then CommandBufferHandle.Null else v.Handle))
         let _CommandsCount = Commands.Length
-        DawnRaw.wgpuQueueSubmit(handle, _CommandsCount, _Commands)
-    member x.Signal(Fence : Fence, SignalValue : uint64) : unit = 
+        DawnRaw.wgpuQueueSubmit(x.Handle, _CommandsCount, _Commands)
+    member inline x.Signal(Fence : Fence, SignalValue : uint64) : unit = 
         let _Fence = (if isNull Fence then FenceHandle.Null else Fence.Handle)
         let _SignalValue = SignalValue
-        DawnRaw.wgpuQueueSignal(handle, _Fence, _SignalValue)
-    member x.CreateFence(Descriptor : FenceDescriptor) : Fence = 
-        Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            Fence(device, DawnRaw.wgpuQueueCreateFence(handle, _Descriptor))
+        DawnRaw.wgpuQueueSignal(x.Handle, _Fence, _SignalValue)
+    member inline x.CreateFence() : Fence = 
+        FenceDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Fence(x.Device, DawnRaw.wgpuQueueCreateFence(x.Handle, _Descriptor))
         )
-    member x.WriteBuffer(Buffer : Buffer, BufferOffset : uint64, Data : nativeint, Size : unativeint) : unit = 
+    member inline x.CreateFence(Descriptor : FenceDescriptor) : Fence = 
+        Descriptor.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new Fence(x.Device, DawnRaw.wgpuQueueCreateFence(x.Handle, _Descriptor))
+        )
+    member inline x.WriteBuffer(Buffer : Buffer, BufferOffset : uint64, Data : nativeint, Size : unativeint) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _BufferOffset = BufferOffset
         let _Data = Data
         let _Size = Size
-        DawnRaw.wgpuQueueWriteBuffer(handle, _Buffer, _BufferOffset, _Data, _Size)
-    member x.WriteTexture(Destination : option<TextureCopyView>, Data : nativeint, DataSize : unativeint, DataLayout : option<TextureDataLayout>, WriteSize : option<Extent3D>) : unit = 
-        let inline _DestinationCont _Destination = 
+        DawnRaw.wgpuQueueWriteBuffer(x.Handle, _Buffer, _BufferOffset, _Data, _Size)
+    member inline x.WriteTexture(Destination : TextureCopyView, Data : nativeint, DataSize : unativeint, DataLayout : TextureDataLayout, WriteSize : Extent3D) : unit = 
+        Destination.Pin (fun _DestinationValue ->
+            let _Destination = NativePtr.stackalloc 1
+            NativePtr.write _Destination _DestinationValue
             let _Data = Data
             let _DataSize = DataSize
-            let inline _DataLayoutCont _DataLayout = 
-                let inline _WriteSizeCont _WriteSize = 
-                    DawnRaw.wgpuQueueWriteTexture(handle, _Destination, _Data, _DataSize, _DataLayout, _WriteSize)
-                match WriteSize with
-                | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _WriteSizeCont ptr)
-                | None -> _WriteSizeCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-            match DataLayout with
-            | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DataLayoutCont ptr)
-            | None -> _DataLayoutCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-        match Destination with
-        | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _DestinationCont ptr)
-        | None -> _DestinationCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
+            DataLayout.Pin (fun _DataLayoutValue ->
+                let _DataLayout = NativePtr.stackalloc 1
+                NativePtr.write _DataLayout _DataLayoutValue
+                WriteSize.Pin (fun _WriteSizeValue ->
+                    let _WriteSize = NativePtr.stackalloc 1
+                    NativePtr.write _WriteSize _WriteSizeValue
+                    DawnRaw.wgpuQueueWriteTexture(x.Handle, _Destination, _Data, _DataSize, _DataLayout, _WriteSize)
+                )
+            )
+        )
 [<AllowNullLiteral>]
 type RenderBundle(device : Device, handle : RenderBundleHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuRenderBundleRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("RenderBundle")
         DawnRaw.wgpuRenderBundleReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuRenderBundleRelease(handle)
+        new RenderBundle(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuRenderBundleReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuRenderBundleRelease(x.Handle)
 [<AllowNullLiteral>]
 type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuRenderBundleEncoderRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("RenderBundleEncoder")
         DawnRaw.wgpuRenderBundleEncoderReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuRenderBundleEncoderRelease(handle)
-    member x.SetPipeline(Pipeline : RenderPipeline) : unit = 
+        new RenderBundleEncoder(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuRenderBundleEncoderReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuRenderBundleEncoderRelease(x.Handle)
+    member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
-        DawnRaw.wgpuRenderBundleEncoderSetPipeline(handle, _Pipeline)
-    member x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderSetPipeline(x.Handle, _Pipeline)
+    member inline x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
         let _GroupIndex = GroupIndex
         let _Group = (if isNull Group then BindGroupHandle.Null else Group.Handle)
         use _DynamicOffsets = fixed DynamicOffsets
         let _DynamicOffsetsCount = DynamicOffsets.Length
-        DawnRaw.wgpuRenderBundleEncoderSetBindGroup(handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
-    member x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderSetBindGroup(x.Handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
+    member inline x.Draw(VertexCount : int) : unit = 
+        let _VertexCount = VertexCount
+        let _InstanceCount = 1
+        let _FirstVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.Draw(VertexCount : int, InstanceCount : int) : unit = 
+        let _VertexCount = VertexCount
+        let _InstanceCount = InstanceCount
+        let _FirstVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int) : unit = 
+        let _VertexCount = VertexCount
+        let _InstanceCount = InstanceCount
+        let _FirstVertex = FirstVertex
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = FirstVertex
         let _FirstInstance = FirstInstance
-        DawnRaw.wgpuRenderBundleEncoderDraw(handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = 1
+        let _FirstIndex = 0
+        let _BaseVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = InstanceCount
+        let _FirstIndex = 0
+        let _BaseVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = InstanceCount
+        let _FirstIndex = FirstIndex
+        let _BaseVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = InstanceCount
+        let _FirstIndex = FirstIndex
+        let _BaseVertex = BaseVertex
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = BaseVertex
         let _FirstInstance = FirstInstance
-        DawnRaw.wgpuRenderBundleEncoderDrawIndexed(handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
-        DawnRaw.wgpuRenderBundleEncoderDrawIndirect(handle, _IndirectBuffer, _IndirectOffset)
-    member x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderDrawIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
+    member inline x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
-        DawnRaw.wgpuRenderBundleEncoderDrawIndexedIndirect(handle, _IndirectBuffer, _IndirectOffset)
-    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
-        let _MarkerLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi MarkerLabel
-        try
-            DawnRaw.wgpuRenderBundleEncoderInsertDebugMarker(handle, _MarkerLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _MarkerLabel
-    member x.PopDebugGroup() : unit = 
-        DawnRaw.wgpuRenderBundleEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : string) : unit = 
-        let _GroupLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi GroupLabel
-        try
-            DawnRaw.wgpuRenderBundleEncoderPushDebugGroup(handle, _GroupLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _GroupLabel
-    member x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderDrawIndexedIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
+    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+        let inline _MarkerLabelCont (_MarkerLabel) = 
+            DawnRaw.wgpuRenderBundleEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
+        if not (isNull MarkerLabel) then
+            let _MarkerLabelLen = System.Text.Encoding.UTF8.GetByteCount MarkerLabel
+            let _MarkerLabelSize = _MarkerLabelLen + 1
+            let _MarkerLabelPtr = NativePtr.stackalloc<byte> _MarkerLabelSize
+            System.Text.Encoding.UTF8.GetBytes(MarkerLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _MarkerLabelPtr, _MarkerLabelSize)) |> ignore
+            NativePtr.set _MarkerLabelPtr _MarkerLabelLen 0uy
+            _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
+        else
+            _MarkerLabelCont 0n
+    member inline x.PopDebugGroup() : unit = 
+        DawnRaw.wgpuRenderBundleEncoderPopDebugGroup(x.Handle)
+    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+        let inline _GroupLabelCont (_GroupLabel) = 
+            DawnRaw.wgpuRenderBundleEncoderPushDebugGroup(x.Handle, _GroupLabel)
+        if not (isNull GroupLabel) then
+            let _GroupLabelLen = System.Text.Encoding.UTF8.GetByteCount GroupLabel
+            let _GroupLabelSize = _GroupLabelLen + 1
+            let _GroupLabelPtr = NativePtr.stackalloc<byte> _GroupLabelSize
+            System.Text.Encoding.UTF8.GetBytes(GroupLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _GroupLabelPtr, _GroupLabelSize)) |> ignore
+            NativePtr.set _GroupLabelPtr _GroupLabelLen 0uy
+            _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
+        else
+            _GroupLabelCont 0n
+    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer) : unit = 
+        let _Slot = Slot
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = 0UL
+        let _Size = 0UL
+        DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
+    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64) : unit = 
+        let _Slot = Slot
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = Offset
+        let _Size = 0UL
+        DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
+    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(handle, _Slot, _Buffer, _Offset, _Size)
-    member x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBuffer(Buffer : Buffer) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = 0UL
+        let _Size = 0UL
+        DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = Offset
+        let _Size = 0UL
+        DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(handle, _Buffer, _Offset, _Size)
-    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
+        DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Format = Format
+        let _Offset = 0UL
+        let _Size = 0UL
+        DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
+    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Format = Format
+        let _Offset = Offset
+        let _Size = 0UL
+        DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
+    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(handle, _Buffer, _Format, _Offset, _Size)
-    member x.Finish(Descriptor : RenderBundleDescriptor) : RenderBundle = 
+        DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
+    member inline x.Finish() : RenderBundle = 
+        RenderBundleDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new RenderBundle(x.Device, DawnRaw.wgpuRenderBundleEncoderFinish(x.Handle, _Descriptor))
+        )
+    member inline x.Finish(Descriptor : RenderBundleDescriptor) : RenderBundle = 
         Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            RenderBundle(device, DawnRaw.wgpuRenderBundleEncoderFinish(handle, _Descriptor))
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new RenderBundle(x.Device, DawnRaw.wgpuRenderBundleEncoderFinish(x.Handle, _Descriptor))
         )
 [<AllowNullLiteral>]
 type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuRenderPassEncoderRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("RenderPassEncoder")
         DawnRaw.wgpuRenderPassEncoderReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuRenderPassEncoderRelease(handle)
-    member x.SetPipeline(Pipeline : RenderPipeline) : unit = 
+        new RenderPassEncoder(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuRenderPassEncoderReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuRenderPassEncoderRelease(x.Handle)
+    member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
-        DawnRaw.wgpuRenderPassEncoderSetPipeline(handle, _Pipeline)
-    member x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetPipeline(x.Handle, _Pipeline)
+    member inline x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
         let _GroupIndex = GroupIndex
         let _Group = (if isNull Group then BindGroupHandle.Null else Group.Handle)
         use _DynamicOffsets = fixed DynamicOffsets
         let _DynamicOffsetsCount = DynamicOffsets.Length
-        DawnRaw.wgpuRenderPassEncoderSetBindGroup(handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
-    member x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetBindGroup(x.Handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
+    member inline x.Draw(VertexCount : int) : unit = 
+        let _VertexCount = VertexCount
+        let _InstanceCount = 1
+        let _FirstVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.Draw(VertexCount : int, InstanceCount : int) : unit = 
+        let _VertexCount = VertexCount
+        let _InstanceCount = InstanceCount
+        let _FirstVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int) : unit = 
+        let _VertexCount = VertexCount
+        let _InstanceCount = InstanceCount
+        let _FirstVertex = FirstVertex
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = FirstVertex
         let _FirstInstance = FirstInstance
-        DawnRaw.wgpuRenderPassEncoderDraw(handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
+        DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = 1
+        let _FirstIndex = 0
+        let _BaseVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = InstanceCount
+        let _FirstIndex = 0
+        let _BaseVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = InstanceCount
+        let _FirstIndex = FirstIndex
+        let _BaseVertex = 0
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32) : unit = 
+        let _IndexCount = IndexCount
+        let _InstanceCount = InstanceCount
+        let _FirstIndex = FirstIndex
+        let _BaseVertex = BaseVertex
+        let _FirstInstance = 0
+        DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = BaseVertex
         let _FirstInstance = FirstInstance
-        DawnRaw.wgpuRenderPassEncoderDrawIndexed(handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+        DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
+    member inline x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
-        DawnRaw.wgpuRenderPassEncoderDrawIndirect(handle, _IndirectBuffer, _IndirectOffset)
-    member x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+        DawnRaw.wgpuRenderPassEncoderDrawIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
+    member inline x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
-        DawnRaw.wgpuRenderPassEncoderDrawIndexedIndirect(handle, _IndirectBuffer, _IndirectOffset)
-    member x.ExecuteBundles(Bundles : array<RenderBundle>) : unit = 
+        DawnRaw.wgpuRenderPassEncoderDrawIndexedIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
+    member inline x.ExecuteBundles(Bundles : array<RenderBundle>) : unit = 
         use _Bundles = fixed (Bundles |> Array.map (fun v -> if isNull v then RenderBundleHandle.Null else v.Handle))
         let _BundlesCount = Bundles.Length
-        DawnRaw.wgpuRenderPassEncoderExecuteBundles(handle, _BundlesCount, _Bundles)
-    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
-        let _MarkerLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi MarkerLabel
-        try
-            DawnRaw.wgpuRenderPassEncoderInsertDebugMarker(handle, _MarkerLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _MarkerLabel
-    member x.PopDebugGroup() : unit = 
-        DawnRaw.wgpuRenderPassEncoderPopDebugGroup(handle)
-    member x.PushDebugGroup(GroupLabel : string) : unit = 
-        let _GroupLabel = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi GroupLabel
-        try
-            DawnRaw.wgpuRenderPassEncoderPushDebugGroup(handle, _GroupLabel)
-        finally
-            System.Runtime.InteropServices.Marshal.FreeHGlobal _GroupLabel
-    member x.SetStencilReference(Reference : int) : unit = 
+        DawnRaw.wgpuRenderPassEncoderExecuteBundles(x.Handle, _BundlesCount, _Bundles)
+    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+        let inline _MarkerLabelCont (_MarkerLabel) = 
+            DawnRaw.wgpuRenderPassEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
+        if not (isNull MarkerLabel) then
+            let _MarkerLabelLen = System.Text.Encoding.UTF8.GetByteCount MarkerLabel
+            let _MarkerLabelSize = _MarkerLabelLen + 1
+            let _MarkerLabelPtr = NativePtr.stackalloc<byte> _MarkerLabelSize
+            System.Text.Encoding.UTF8.GetBytes(MarkerLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _MarkerLabelPtr, _MarkerLabelSize)) |> ignore
+            NativePtr.set _MarkerLabelPtr _MarkerLabelLen 0uy
+            _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
+        else
+            _MarkerLabelCont 0n
+    member inline x.PopDebugGroup() : unit = 
+        DawnRaw.wgpuRenderPassEncoderPopDebugGroup(x.Handle)
+    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+        let inline _GroupLabelCont (_GroupLabel) = 
+            DawnRaw.wgpuRenderPassEncoderPushDebugGroup(x.Handle, _GroupLabel)
+        if not (isNull GroupLabel) then
+            let _GroupLabelLen = System.Text.Encoding.UTF8.GetByteCount GroupLabel
+            let _GroupLabelSize = _GroupLabelLen + 1
+            let _GroupLabelPtr = NativePtr.stackalloc<byte> _GroupLabelSize
+            System.Text.Encoding.UTF8.GetBytes(GroupLabel.AsSpan(), Span<byte>(NativePtr.toVoidPtr _GroupLabelPtr, _GroupLabelSize)) |> ignore
+            NativePtr.set _GroupLabelPtr _GroupLabelLen 0uy
+            _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
+        else
+            _GroupLabelCont 0n
+    member inline x.SetStencilReference(Reference : int) : unit = 
         let _Reference = Reference
-        DawnRaw.wgpuRenderPassEncoderSetStencilReference(handle, _Reference)
-    member x.SetBlendColor(Color : option<Color>) : unit = 
-        let inline _ColorCont _Color = 
-            DawnRaw.wgpuRenderPassEncoderSetBlendColor(handle, _Color)
-        match Color with
-        | Some v -> v.Pin(fun n -> use ptr = fixed [|n|] in _ColorCont ptr)
-        | None -> _ColorCont (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt 0n)
-    member x.SetViewport(X : float32, Y : float32, Width : float32, Height : float32, MinDepth : float32, MaxDepth : float32) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetStencilReference(x.Handle, _Reference)
+    member inline x.SetBlendColor(Color : Color) : unit = 
+        Color.Pin (fun _ColorValue ->
+            let _Color = NativePtr.stackalloc 1
+            NativePtr.write _Color _ColorValue
+            DawnRaw.wgpuRenderPassEncoderSetBlendColor(x.Handle, _Color)
+        )
+    member inline x.SetViewport(X : float32, Y : float32, Width : float32, Height : float32, MinDepth : float32, MaxDepth : float32) : unit = 
         let _X = X
         let _Y = Y
         let _Width = Width
         let _Height = Height
         let _MinDepth = MinDepth
         let _MaxDepth = MaxDepth
-        DawnRaw.wgpuRenderPassEncoderSetViewport(handle, _X, _Y, _Width, _Height, _MinDepth, _MaxDepth)
-    member x.SetScissorRect(X : int, Y : int, Width : int, Height : int) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetViewport(x.Handle, _X, _Y, _Width, _Height, _MinDepth, _MaxDepth)
+    member inline x.SetScissorRect(X : int, Y : int, Width : int, Height : int) : unit = 
         let _X = X
         let _Y = Y
         let _Width = Width
         let _Height = Height
-        DawnRaw.wgpuRenderPassEncoderSetScissorRect(handle, _X, _Y, _Width, _Height)
-    member x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetScissorRect(x.Handle, _X, _Y, _Width, _Height)
+    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer) : unit = 
+        let _Slot = Slot
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = 0UL
+        let _Size = 0UL
+        DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
+    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64) : unit = 
+        let _Slot = Slot
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = Offset
+        let _Size = 0UL
+        DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
+    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(handle, _Slot, _Buffer, _Offset, _Size)
-    member x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBuffer(Buffer : Buffer) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = 0UL
+        let _Size = 0UL
+        DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Offset = Offset
+        let _Size = 0UL
+        DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(handle, _Buffer, _Offset, _Size)
-    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
+    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Format = Format
+        let _Offset = 0UL
+        let _Size = 0UL
+        DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
+    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64) : unit = 
+        let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
+        let _Format = Format
+        let _Offset = Offset
+        let _Size = 0UL
+        DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
+    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = Offset
         let _Size = Size
-        DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(handle, _Buffer, _Format, _Offset, _Size)
-    member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
+        DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
+    member inline x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _QueryIndex = QueryIndex
-        DawnRaw.wgpuRenderPassEncoderWriteTimestamp(handle, _QuerySet, _QueryIndex)
-    member x.EndPass() : unit = 
-        DawnRaw.wgpuRenderPassEncoderEndPass(handle)
+        DawnRaw.wgpuRenderPassEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
+    member inline x.EndPass() : unit = 
+        DawnRaw.wgpuRenderPassEncoderEndPass(x.Handle)
 [<AllowNullLiteral>]
 type RenderPipeline(device : Device, handle : RenderPipelineHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuRenderPipelineRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("RenderPipeline")
         DawnRaw.wgpuRenderPipelineReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuRenderPipelineRelease(handle)
-    member x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
+        new RenderPipeline(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuRenderPipelineReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuRenderPipelineRelease(x.Handle)
+    member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
-        BindGroupLayout(device, DawnRaw.wgpuRenderPipelineGetBindGroupLayout(handle, _GroupIndex))
+        new BindGroupLayout(x.Device, DawnRaw.wgpuRenderPipelineGetBindGroupLayout(x.Handle, _GroupIndex))
 [<AllowNullLiteral>]
 type Sampler(device : Device, handle : SamplerHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuSamplerRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Sampler")
         DawnRaw.wgpuSamplerReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuSamplerRelease(handle)
+        new Sampler(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuSamplerReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuSamplerRelease(x.Handle)
 [<AllowNullLiteral>]
 type ShaderModule(device : Device, handle : ShaderModuleHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuShaderModuleRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("ShaderModule")
         DawnRaw.wgpuShaderModuleReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuShaderModuleRelease(handle)
+        new ShaderModule(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuShaderModuleReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuShaderModuleRelease(x.Handle)
 [<AllowNullLiteral>]
 type Surface(device : Device, handle : SurfaceHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuSurfaceRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Surface")
         DawnRaw.wgpuSurfaceReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuSurfaceRelease(handle)
+        new Surface(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuSurfaceReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuSurfaceRelease(x.Handle)
 [<AllowNullLiteral>]
 type SwapChain(device : Device, handle : SwapChainHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuSwapChainRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("SwapChain")
         DawnRaw.wgpuSwapChainReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuSwapChainRelease(handle)
-    member x.Configure(Format : TextureFormat, AllowedUsage : TextureUsage, Width : int, Height : int) : unit = 
+        new SwapChain(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuSwapChainReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuSwapChainRelease(x.Handle)
+    member inline x.Configure(Format : TextureFormat, AllowedUsage : TextureUsage, Width : int, Height : int) : unit = 
         let _Format = Format
         let _AllowedUsage = AllowedUsage
         let _Width = Width
         let _Height = Height
-        DawnRaw.wgpuSwapChainConfigure(handle, _Format, _AllowedUsage, _Width, _Height)
-    member x.GetCurrentTextureView() : TextureView = 
-        TextureView(device, DawnRaw.wgpuSwapChainGetCurrentTextureView(handle))
-    member x.Present() : unit = 
-        DawnRaw.wgpuSwapChainPresent(handle)
+        DawnRaw.wgpuSwapChainConfigure(x.Handle, _Format, _AllowedUsage, _Width, _Height)
+    member inline x.GetCurrentTextureView() : TextureView = 
+        new TextureView(x.Device, DawnRaw.wgpuSwapChainGetCurrentTextureView(x.Handle))
+    member inline x.Present() : unit = 
+        DawnRaw.wgpuSwapChainPresent(x.Handle)
 [<AllowNullLiteral>]
 type Texture(device : Device, handle : TextureHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuTextureRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("Texture")
         DawnRaw.wgpuTextureReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuTextureRelease(handle)
-    member x.CreateView(Descriptor : TextureViewDescriptor) : TextureView = 
-        Descriptor.Pin (fun _DescriptorValue ->
-            use _Descriptor = fixed [| _DescriptorValue |]
-            TextureView(device, DawnRaw.wgpuTextureCreateView(handle, _Descriptor))
+        new Texture(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuTextureReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuTextureRelease(x.Handle)
+    member inline x.CreateView() : TextureView = 
+        TextureViewDescriptor.Default.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new TextureView(x.Device, DawnRaw.wgpuTextureCreateView(x.Handle, _Descriptor))
         )
-    member x.Destroy() : unit = 
-        DawnRaw.wgpuTextureDestroy(handle)
+    member inline x.CreateView(Descriptor : TextureViewDescriptor) : TextureView = 
+        Descriptor.Pin (fun _DescriptorValue ->
+            let _Descriptor = NativePtr.stackalloc 1
+            NativePtr.write _Descriptor _DescriptorValue
+            new TextureView(x.Device, DawnRaw.wgpuTextureCreateView(x.Handle, _Descriptor))
+        )
+    member inline x.Destroy() : unit = 
+        DawnRaw.wgpuTextureDestroy(x.Handle)
 [<AllowNullLiteral>]
 type TextureView(device : Device, handle : TextureViewHandle) = 
+    let mutable isDisposed = false
     member x.Device = device
     member x.Handle = handle
-    member x.Reference() : unit = 
+    member x.IsDisposed = isDisposed
+    member private x.Dispose(disposing : bool) =
+        if not isDisposed then 
+            isDisposed <- true
+            if disposing then System.GC.SuppressFinalize x
+            DawnRaw.wgpuTextureViewRelease(handle)
+    member x.Dispose() = x.Dispose(true)
+    override x.Finalize() = x.Dispose(false)
+    member x.Clone() = 
+        if isDisposed then raise <| System.ObjectDisposedException("TextureView")
         DawnRaw.wgpuTextureViewReference(handle)
-    member x.Release() : unit = 
-        DawnRaw.wgpuTextureViewRelease(handle)
+        new TextureView(device, handle)
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+    member inline x.Reference() : unit = 
+        DawnRaw.wgpuTextureViewReference(x.Handle)
+    member inline x.Release() : unit = 
+        DawnRaw.wgpuTextureViewRelease(x.Handle)

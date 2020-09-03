@@ -52,7 +52,7 @@ type WebGPUExtensions private() =
                 native.Next <- NativePtr.toNativeInt data
                 use ptr = fixed [| native |]
                 let handle = wgpuDeviceCreateShaderModule(device.Handle, ptr)
-                ShaderModule(device, handle)
+                new ShaderModule(device, handle)
             finally
                 gc.Free()
         )
