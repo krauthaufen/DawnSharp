@@ -267,7 +267,6 @@ module rec Ast =
         | Struct of name : string * extensible : bool * fields : list<Field>
         | PersistentCallback of name : string * args : list<Field>
         | CompletionCallback of name : string * args : list<Field>
-        //| Function of callbackType : TypeDef * list<TypeDef> * TypeDef
         | Enum of name : string * flags : bool * values : list<string * int>
         | Option of TypeDef
         | Array of TypeDef
@@ -278,6 +277,32 @@ module rec Ast =
         | Float of bits : int 
         | Bool
         | String
+
+        member x.Flatten =  
+            match x with
+            | Option t | Array t | Ptr t | ByRef t -> t
+            | _ -> x
+
+
+        member x.UsedTypes =
+            match x with
+            | Object(_, methods) -> 
+                methods 
+                |> Seq.collect (fun m -> m.returnType.Value :: (m.parameters |> List.map (fun p -> p.fieldType.Value)))
+                |> Seq.map (fun t -> t.Flatten)
+            | Struct(_, _, fields) ->
+                fields 
+                |> Seq.map (fun p -> p.fieldType.Value)
+                |> Seq.map (fun t -> t.Flatten)
+            | PersistentCallback(_, args) | CompletionCallback(_, args) ->
+                args 
+                |> Seq.map (fun p -> p.fieldType.Value)
+                |> Seq.map (fun t -> t.Flatten)
+            | Option t | Array t | Ptr t | ByRef t ->
+                Seq.append (Seq.singleton t) t.UsedTypes
+                |> Seq.map (fun t -> t.Flatten)
+            | _ ->
+                Seq.empty
 
     let rec nativeName (t : TypeDef) =
         match t with
@@ -356,7 +381,7 @@ module rec Ast =
         | Array t ->
             sprintf "array<%s>" (frontendName t)
         | Option t ->
-            sprintf "voption<%s>" (frontendName t)
+            sprintf "option<%s>" (frontendName t)
         | Ptr t ->
             sprintf "nativeptr<%s>" (frontendName t)
         | ByRef t ->
@@ -664,7 +689,7 @@ module rec Ast =
                     inner
                 ]
             
-        let pinField (access : string -> string) (field : Field) (inner : string) =
+        let rec pinField (access : string -> string) (field : Field) (inner : string) =
             let name = field.name
             let typ = field.fieldType.Value
             match typ with
@@ -701,15 +726,21 @@ module rec Ast =
                     inner
                 ]
                 
-            | ByRef (Struct _) ->
-                String.concat "\r\n" [
-                    sprintf "%s.Pin (fun _%sValue ->" (access name) name
-                    sprintf "    let _%s = NativePtr.stackalloc 1" name
-                    sprintf "    NativePtr.write _%s _%sValue" name name
-                    //sprintf "    use _%s = fixed [| _%sValue |]" name name
-                    indent inner
-                    sprintf ")"
+            | ByRef (Struct (_, ext, fields) as element) ->
+                let nativeName = nativeName element
+                pinStruct nativeName (access name) (sprintf "%sValue" name) ext fields [
+                    sprintf "let _%s = NativePtr.stackalloc 1" name
+                    sprintf "NativePtr.write _%s _%sValue" name name
+                    inner
                 ]
+                //String.concat "\r\n" [
+                //    sprintf "%s.Pin (fun _%sValue ->" (access name) name
+                //    sprintf "    let _%s = NativePtr.stackalloc 1" name
+                //    sprintf "    NativePtr.write _%s _%sValue" name name
+                //    //sprintf "    use _%s = fixed [| _%sValue |]" name name
+                //    indent inner
+                //    sprintf ")"
+                //]
             | ByRef (Enum _ | Float _ | Int _ | NativeInt _ | Ptr _) ->
                 String.concat "\r\n" [
                     sprintf "let _%s = NativePtr.stackalloc 1" name
@@ -723,22 +754,32 @@ module rec Ast =
             | Array (Object _ as element) ->
                 let elementName = nativeName element
                 String.concat "\r\n" [
-                    sprintf "use _%s = fixed (%s |> Array.map (fun v -> if isNull v then %s.Null else v.Handle))" name (access name) elementName
                     sprintf "let _%sCount = %s.Length" name (access name)
+                    sprintf "let _%s = NativePtr.stackalloc _%sCount" name name
+                    sprintf "for i in 0 .. _%sCount-1 do" name
+                    sprintf "    if isNull %s.[i] then NativePtr.set _%s i %s.Null" (access name) name elementName
+                    sprintf "    else NativePtr.set _%s i %s.[i].Handle" name (access name)
+                    //// TODO bad array alloc
+                    //sprintf "use _%s = fixed (%s |> Array.map (fun v -> if isNull v then %s.Null else v.Handle))" name (access name) elementName
                     inner
                 ]
                  
-            | Array (Struct _ as element) ->
+            | Array (Struct(_,ext, fields) as element) ->
                 let frontendElement = frontendName element
                 let nativeElement = nativeName element
+
                 String.concat "\r\n" [
                     sprintf "let _%sCount = if isNull %s then 0 else %s.Length" name (access name) (access name)
-                    sprintf "let rec _%sCont (inputs : array<%s>) (outputs : array<%s>) (i : int) =" name frontendElement nativeElement
-                    sprintf "    if i >= _%sCount then" name
-                    sprintf "        use _%s = fixed outputs" name
+                    sprintf "let rec _%sCont (_%sinputs : array<%s>) (_%soutputs : array<%s>) (_%si : int) =" name name frontendElement name nativeElement name
+                    sprintf "    if _%si >= _%sCount then" name name
+                    sprintf "        use _%s = fixed _%soutputs" name name
                     sprintf "%s" (indent (indent inner))
                     sprintf "    else"
-                    sprintf "        inputs.[i].Pin(fun n -> outputs.[i] <- n; _%sCont inputs outputs (i + 1))" name
+                    indent (indent (pinStruct nativeElement (sprintf "_%sinputs.[_%si]" name name) "n" ext fields [
+                        sprintf "_%soutputs.[_%si] <- _n" name name
+                        sprintf "_%sCont _%sinputs _%soutputs (_%si + 1)" name name name name
+                    ]))
+                    //sprintf "        inputs.[i].Pin(fun n -> outputs.[i] <- n; _%sCont inputs outputs (i + 1))" name
                     sprintf "_%sCont %s (if _%sCount > 0 then Array.zeroCreate _%sCount else null) 0" name (access name) name name
 
                 ]
@@ -757,7 +798,7 @@ module rec Ast =
                     indent inner
 
                     sprintf "match %s with" (access name)
-                    sprintf "| ValueSome o ->"
+                    sprintf "| Some o ->"
                     sprintf "    let _%s = NativePtr.stackalloc 1" name
                     sprintf "    if isNull o then NativePtr.write _%s %s.Null" name elementName
                     sprintf "    else NativePtr.write _%s o.Handle" name
@@ -766,18 +807,24 @@ module rec Ast =
                     sprintf "    _%sCont (NativePtr.ofNativeInt 0n)" name
                 ]
                 
-            | Option (Struct _ as element) ->
+            | Option (Struct(_, ext, fields) as element) ->
+                let nativeName = nativeName element
                 String.concat "\r\n" [
                     sprintf "let inline _%sCont _%s = " name name
                     indent inner
                     sprintf "match %s with" (access name)
-                    sprintf "| ValueSome v ->"
-                    sprintf "    v.Pin(fun n -> "
-                    sprintf "         let ptr = NativePtr.stackalloc 1"
-                    sprintf "         NativePtr.write ptr n"
-                    sprintf "         _%sCont ptr" name
-                    sprintf "    )" 
-                    sprintf "| ValueNone -> _%sCont (NativePtr.ofNativeInt 0n)" name
+                    sprintf "| Some v ->"
+                    indent (
+                        pinStruct nativeName "v" "n" ext fields [
+                            sprintf "let ptr = NativePtr.stackalloc 1"
+                            sprintf "NativePtr.write ptr _n"
+                            sprintf "_%sCont ptr" name
+                            
+                        ]
+                    )
+                    //sprintf "    v.Pin(fun n -> "
+                    //sprintf "    )" 
+                    sprintf "| None -> _%sCont (NativePtr.ofNativeInt 0n)" name
                 ]
                 
             | Option _ ->
@@ -786,7 +833,7 @@ module rec Ast =
                     indent inner
 
                     sprintf "match %s with" (access name)
-                    sprintf "| ValueSome o ->"
+                    sprintf "| Some o ->"
                     sprintf "    let _%s = NativePtr.stackalloc 1" name
                     sprintf "    NativePtr.write _%s o" name
                     sprintf "    _%sCont _%s" name name
@@ -881,16 +928,69 @@ module rec Ast =
                     sprintf "let _%s = (if isNull %s then %s.Null else %s.Handle)" name (access name) nativeName (access name)
                     inner
                 ]
-            | Struct _  ->
-                String.concat "\r\n" [
-                    sprintf "%s.Pin (fun _%s ->" (access name) name
-                    indent inner
-                    sprintf ")"
+            | Struct(_, ext, fields)  ->
+                pinStruct (nativeName typ) (access name) name ext fields [
+                    inner
                 ]
+                //String.concat "\r\n" [
+                //    sprintf "%s.Pin (fun _%s ->" (access name) name
+                //    indent inner
+                //    sprintf ")"
+                //]
             | Unit ->
                 inner
 
+        and pinStruct (nativeName : string) (access : string) (varName : string) (ext : bool) (fields : list<Field>) (inner : list<string>) =
+            let rec pinCode (f : list<Field>) =
+                match f with
+                | [] ->
+                    String.concat "\r\n" [
+                        yield sprintf "let mutable _%s = Unchecked.defaultof<%s>" varName nativeName
+                        if ext then yield sprintf "_%s.Next <- 0n" varName
+                        for f in fields do
+                            match f.fieldType.Value with
+                            | Array _ -> yield sprintf "_%s.%sCount <- _%sCount" varName f.name f.name
+                            | _ -> ()
+                            yield sprintf "_%s.%s <- _%s" varName f.name f.name
+                        yield sprintf "let _%s = _%s" varName varName
+                        yield! inner
+                    ]
+                | f0 :: rest ->
+                    let rest = pinCode rest
+                    pinField (sprintf "%s.%s" access) f0 rest
+                
+            pinCode fields
+
         let defs = typeDefs all
+
+        let equalType (a : TypeDef) (b : TypeDef) =
+            frontendName a = frontendName b
+
+        let graph =
+            defs |> List.map (fun d ->
+                let used = d.UsedTypes |> Seq.filter (fun t -> defs |> List.exists (fun ti -> equalType ti t)) |> Seq.toList |> List.distinct
+
+                System.Console.WriteLine(sprintf "%s: [%s]" (frontendName d) (used |> List.map frontendName |> String.concat "; "))
+
+                d, used
+            )
+
+        let rec tops (graph : list<TypeDef * list<TypeDef>>) =
+            let noDeps, deps = graph |> List.partition (fun (_,ds) -> List.isEmpty ds)
+            let noDeps = List.map fst noDeps
+            if List.isEmpty deps then
+                noDeps
+            elif List.isEmpty noDeps then
+                failwithf "cycle in [%s]" (graph |> List.map (fun (a,_) -> frontendName a) |> String.concat "; ")
+            else
+                let filtered = deps |> List.map (fun (a, bs) -> a, bs |> List.filter (fun b -> not (List.exists (equalType b) noDeps)))
+                noDeps @ tops filtered
+
+   
+        let defs = tops graph
+            
+
+
 
         printfn "namespace rec WebGPU"
         printfn "open System"
@@ -1002,6 +1102,7 @@ module rec Ast =
         printfn ""
         printfn ""
 
+
         // frontend structs
         for e in defs do
             match e with
@@ -1009,7 +1110,7 @@ module rec Ast =
                 
                 printfn "[<Struct>]"
                 printfn "type %s = " name
-                printfn "    member x.Pin<'a>(callback : %s -> 'a) : 'a = " (nativeName e)
+                printfn "    member inline x.Pin<'a>(callback : %s -> 'a) : 'a = " (nativeName e)
                 printfn "        let mutable native = Unchecked.defaultof<%s>" (nativeName e)
                 if ext then printfn "        native.Next <- 0n"
                 printfn "        callback native"
@@ -1052,7 +1153,7 @@ module rec Ast =
 
                 printfn ""
 
-                printfn "    member x.Pin<'a>(callback : %s -> 'a) : 'a = " (nativeName e)
+                printfn "    member inline x.Pin<'a>(callback : %s -> 'a) : 'a = " (nativeName e)
                 printfn "        let x = x"
                 let rec pinCode (f : list<Field>) =
                     match f with

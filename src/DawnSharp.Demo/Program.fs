@@ -240,7 +240,7 @@ type Adapter(handle : AdapterHandle) =
             use pDis = fixed disabledToggles
             let dh = DawnRaw.dawnCreateDevice(handle, extensions.Length, pExt, enabledToggles.Length, pEn, disabledToggles.Length, pDis)
             
-            Device(dh)
+            new Device(dh)
         finally
             extensions |> Array.iter Marshal.FreeHGlobal
             enabledToggles |> Array.iter Marshal.FreeHGlobal
@@ -340,6 +340,7 @@ type Queue with
 
         if status <> FenceCompletionStatus.Success then raise <| QueueWaitFailed status
 
+
 let run(device : Device) =
     let size = 32 <<< 20
 
@@ -430,12 +431,12 @@ let run(device : Device) =
             AlphaToCoverageEnabled = false
             Layout  = pipelineLayout
             VertexStage = { Module = vertexModule; EntryPoint = "main" }
-            FragmentStage = ValueSome { Module = fragmentModule; EntryPoint = "main" } 
+            FragmentStage = Some { Module = fragmentModule; EntryPoint = "main" } 
             PrimitiveTopology = PrimitiveTopology.TriangleList
             SampleCount = 1
             SampleMask = 1
             RasterizationState =
-                ValueSome {
+                Some {
                     FrontFace = FrontFace.CCW
                     CullMode = CullMode.Back
                     DepthBias = 0
@@ -444,7 +445,7 @@ let run(device : Device) =
                 }
 
             VertexState = 
-                ValueSome { 
+                Some { 
                     IndexFormat = IndexFormat.Undefined
                     VertexBuffers = 
                     [|
@@ -459,7 +460,7 @@ let run(device : Device) =
                     |]
                 }
             DepthStencilState =     
-                ValueSome { 
+                Some { 
                     Format = TextureFormat.Depth24PlusStencil8
                     DepthWriteEnabled = true
                     DepthCompare = CompareFunction.LessEqual
@@ -622,8 +623,18 @@ module NativePtr =
         NativePtr.set ptr l 0uy
         cont (NativePtr.toNativeInt ptr)
 
+let test () =
+    let ptrs = System.Collections.Generic.List<nativeptr<int>>()
+    for i in 1 .. 10 do
+        let a = NativePtr.stackalloc 1
+        NativePtr.write a i
+        ptrs.Add a
+
+    for a in ptrs do
+        printfn "%A" (NativePtr.read a)
+
 [<EntryPoint; STAThread>]
-let main argv =
+let main argv = 
     Aardvark.Init()
  
     let glfw = Glfw.GetApi()
@@ -653,6 +664,15 @@ let main argv =
         printfn "%s" a.Name
     | _ -> 
         let dev = a.CreateDevice()
+
+        //let sw = System.Diagnostics.Stopwatch.StartNew()
+        //for i in 1 .. 100 do
+        //    let a = dev.CreateBuffer { Label = "asdsad"; Usage = BufferUsage.Vertex ||| BufferUsage.CopyDst; Size = 1024UL; MappedAtCreation = false }
+        //    a.Dispose()
+        //    //Console.ReadLine()
+        //sw.Stop()
+        //printfn "%A" sw.Elapsed.TotalMilliseconds
+        //exit 0
         dev.SetUncapturedErrorCallback(ErrorCallback(fun typ msg _ ->
             printfn "%A: %s" typ msg
         ), 0n) |> ignore
@@ -756,12 +776,12 @@ let main argv =
                 AlphaToCoverageEnabled = false
                 Layout  = pipelineLayout
                 VertexStage = { Module = vertexModule; EntryPoint = "main" }
-                FragmentStage = ValueSome { Module = fragmentModule; EntryPoint = "main" }
+                FragmentStage = Some { Module = fragmentModule; EntryPoint = "main" }
                 PrimitiveTopology = PrimitiveTopology.TriangleStrip
                 SampleCount = 1
                 SampleMask = 1
                 RasterizationState =
-                    ValueSome {
+                    Some {
                         FrontFace = FrontFace.CCW
                         CullMode = CullMode.None
                         DepthBias = 0
@@ -770,7 +790,7 @@ let main argv =
                     }
 
                 VertexState = 
-                    ValueSome { 
+                    Some { 
                         IndexFormat = IndexFormat.Uint32
                         VertexBuffers = 
                             [|
@@ -785,7 +805,7 @@ let main argv =
                             |]
                     }
                 DepthStencilState =   
-                    ValueSome {
+                    Some {
                         Format = TextureFormat.Depth24PlusStencil8
                         DepthWriteEnabled = true
                         DepthCompare = CompareFunction.LessEqual
@@ -859,7 +879,7 @@ let main argv =
                             }
                         |]
                     DepthStencilAttachment =
-                        ValueSome {
+                        Some {
                             Attachment = depthView
                             DepthLoadOp = LoadOp.Clear
                             DepthStoreOp = StoreOp.Store
