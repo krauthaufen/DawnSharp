@@ -1222,88 +1222,88 @@ module rec Ast =
                 printfn "    interface System.IDisposable with"
                 printfn "        member x.Dispose() = x.Dispose()"
                 for meth in meths do
-
-                    let overloads (meth : Method) =
-                        let rec traverse (a : list<Field>) =
-                            match a with
-                            | [] -> [[]]
-                            | f :: rest ->
-                                if f.Defaultable then
-                                    let take = traverse rest |> List.map (fun a -> Choice1Of2 { f with defaultValue = None } :: a)
-                                    let restArgs = 
-                                        (f :: rest) |> List.map (fun f -> 
-                                            match f.defaultValue with
-                                            | Some v -> Choice2Of2 (f.name, v, f.fieldType.Value)
-                                            | None -> Choice2Of2 (f.name, sprintf "%s.Default" (frontendName f.fieldType.Value), f.fieldType.Value)
+                    if meth.name <> "Reference" && meth.name <> "Release" then
+                        let overloads (meth : Method) =
+                            let rec traverse (a : list<Field>) =
+                                match a with
+                                | [] -> [[]]
+                                | f :: rest ->
+                                    if f.Defaultable then
+                                        let take = traverse rest |> List.map (fun a -> Choice1Of2 { f with defaultValue = None } :: a)
+                                        let restArgs = 
+                                            (f :: rest) |> List.map (fun f -> 
+                                                match f.defaultValue with
+                                                | Some v -> Choice2Of2 (f.name, v, f.fieldType.Value)
+                                                | None -> Choice2Of2 (f.name, sprintf "%s.Default" (frontendName f.fieldType.Value), f.fieldType.Value)
+                                            )
+                                        restArgs :: take
+                                    else
+                                        traverse rest |> List.map (fun fs ->
+                                            Choice1Of2 f :: fs
                                         )
-                                    restArgs :: take
-                                else
-                                    traverse rest |> List.map (fun fs ->
-                                        Choice1Of2 f :: fs
-                                    )
 
-                        traverse meth.parameters |> List.map (fun args ->
-                            let pars = args |> List.choose (function Choice1Of2 f -> Some f | _ -> None)
-                            { meth with parameters = pars }, args
-                        )
+                            traverse meth.parameters |> List.map (fun args ->
+                                let pars = args |> List.choose (function Choice1Of2 f -> Some f | _ -> None)
+                                { meth with parameters = pars }, args
+                            )
 
-                    for meth, args in overloads meth do
+                        for meth, args in overloads meth do
 
-                        let ret = meth.returnType.Value |> frontendName
-                        let argDecl = 
-                            meth.parameters |> List.map (fun p ->
-                                sprintf "%s : %s" p.name (frontendName p.fieldType.Value)
-                            ) |> String.concat ", "
-                        printfn "    member inline x.%s(%s) : %s = " meth.name argDecl ret
+                            let ret = meth.returnType.Value |> frontendName
+                            let argDecl = 
+                                meth.parameters |> List.map (fun p ->
+                                    sprintf "%s : %s" p.name (frontendName p.fieldType.Value)
+                                ) |> String.concat ", "
+                            printfn "    member inline x.%s(%s) : %s = " meth.name argDecl ret
 
-                        //for p in meth.parameters do
-                        //    if p.Defaultable then
-                        //        match p.defaultValue with
-                        //        | Some value -> printfn "        let %s = defaultArg %s %s" p.name p.name value
-                        //        | None -> printfn "        let %s = defaultArg %s %s.Default" p.name p.name (frontendName p.fieldType.Value)
+                            //for p in meth.parameters do
+                            //    if p.Defaultable then
+                            //        match p.defaultValue with
+                            //        | Some value -> printfn "        let %s = defaultArg %s %s" p.name p.name value
+                            //        | None -> printfn "        let %s = defaultArg %s %s.Default" p.name p.name (frontendName p.fieldType.Value)
 
 
-                        let nativeFunctionName = sprintf "wgpu%s%s" name meth.name
+                            let nativeFunctionName = sprintf "wgpu%s%s" name meth.name
 
-                        let rec pinCode (args : list<string>) (f : list<Choice<Field, string * string * TypeDef>>) =
-                            match f with
-                            | [] ->
-                                let retName = frontendName meth.returnType.Value
-                                let wrap = 
-                                    match meth.returnType.Value with
-                                    | Object _ -> 
-                                        if retName = "Device" then sprintf "new %s(%s)" retName
-                                        else sprintf "new %s(%s, %s)" retName device
-                                    | Bool ->
-                                        sprintf "%s <> 0"
-                                    | Unit | Float _ | Int _ | NativeInt _  ->
-                                        id
-                                    | t ->
-                                        failwithf "bad return type: %A" t
+                            let rec pinCode (args : list<string>) (f : list<Choice<Field, string * string * TypeDef>>) =
+                                match f with
+                                | [] ->
+                                    let retName = frontendName meth.returnType.Value
+                                    let wrap = 
+                                        match meth.returnType.Value with
+                                        | Object _ -> 
+                                            if retName = "Device" then sprintf "new %s(%s)" retName
+                                            else sprintf "new %s(%s, %s)" retName device
+                                        | Bool ->
+                                            sprintf "%s <> 0"
+                                        | Unit | Float _ | Int _ | NativeInt _  ->
+                                            id
+                                        | t ->
+                                            failwithf "bad return type: %A" t
 
-                                String.concat "\r\n" [
-                                    sprintf "DawnRaw.%s(%s)" nativeFunctionName ("x.Handle" :: (List.rev args) |> String.concat ", ") |> wrap
-                                ]
+                                    String.concat "\r\n" [
+                                        sprintf "DawnRaw.%s(%s)" nativeFunctionName ("x.Handle" :: (List.rev args) |> String.concat ", ") |> wrap
+                                    ]
 
                         
 
-                            | f0 :: rest ->
-                                match f0 with
-                                | Choice1Of2 f0 -> 
-                                    match f0.fieldType.Value with
-                                    | Array _ ->
-                                        let rest = pinCode (sprintf "_%s" f0.name :: sprintf "_%sCount" f0.name :: args) rest
-                                        pinField id f0 rest
+                                | f0 :: rest ->
+                                    match f0 with
+                                    | Choice1Of2 f0 -> 
+                                        match f0.fieldType.Value with
+                                        | Array _ ->
+                                            let rest = pinCode (sprintf "_%s" f0.name :: sprintf "_%sCount" f0.name :: args) rest
+                                            pinField id f0 rest
                                 
-                                    | _ -> 
-                                        let rest = pinCode (sprintf "_%s" f0.name :: args) rest
-                                        pinField id f0 rest
-                                | Choice2Of2 ((name, value, typ)) ->
-                                    let rest = pinCode (sprintf "_%s" name :: args) rest
-                                    pinField (fun _ -> value) { name = name; fieldType = lazy typ; defaultValue = None } rest
+                                        | _ -> 
+                                            let rest = pinCode (sprintf "_%s" f0.name :: args) rest
+                                            pinField id f0 rest
+                                    | Choice2Of2 ((name, value, typ)) ->
+                                        let rest = pinCode (sprintf "_%s" name :: args) rest
+                                        pinField (fun _ -> value) { name = name; fieldType = lazy typ; defaultValue = None } rest
                 
-                        let code = pinCode [] args
-                        printfn "%s" (indent (indent code))
+                            let code = pinCode [] args
+                            printfn "%s" (indent (indent code))
 
 
             | _ ->

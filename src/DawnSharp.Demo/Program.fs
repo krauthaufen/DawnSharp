@@ -326,7 +326,7 @@ type Buffer with
 type Queue with
     member x.Wait() =
         let mutable res = Int32.MaxValue
-        let f = x.CreateFence { Label = null; InitialValue = 0UL }
+        use f = x.CreateFence { Label = null; InitialValue = 0UL }
         x.Signal(f, 1UL)
         f.OnCompletion(1UL, FenceOnCompletionCallback(fun status _ ->
             Volatile.Write(&res, int status)
@@ -336,7 +336,7 @@ type Queue with
             x.Device.Tick()
             iter <- iter + 1
         let status = Volatile.Read(&res) |> unbox<FenceCompletionStatus>
-        f.Release()
+
 
         if status <> FenceCompletionStatus.Success then raise <| QueueWaitFailed status
 
@@ -505,7 +505,7 @@ let run(device : Device) =
         
     let q = device.GetDefaultQueue()
     q.Submit [| buf |]
-    buf.Release()
+    buf.Dispose()
     q.Wait()
 
 
@@ -521,9 +521,9 @@ let run(device : Device) =
     dst.Destroy()
     src.Destroy()
     real.Destroy()
-    src.Release()
-    dst.Release()
-    real.Release()
+    src.Dispose()
+    dst.Dispose()
+    real.Dispose()
 
 
 module PCITable = 
@@ -804,7 +804,7 @@ let main argv =
                                 }
                             |]
                     }
-                DepthStencilState =   
+                DepthStencilState =  
                     Some {
                         Format = TextureFormat.Depth24PlusStencil8
                         DepthWriteEnabled = true

@@ -15,7 +15,7 @@ type SpirVShaderModuleDescriptor =
         Label : string
         Code : byte[]
     }
-    
+
 [<Struct>]
 type GLSLShaderModuleDescriptor =
     {
@@ -25,6 +25,8 @@ type GLSLShaderModuleDescriptor =
         Defines     : list<string>
         Code        : string
     }
+
+
 [<AbstractClass; Sealed; Extension>]
 type WebGPUExtensions private() =
 

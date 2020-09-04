@@ -3104,10 +3104,6 @@ type BindGroup(device : Device, handle : BindGroupHandle) =
         new BindGroup(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuBindGroupReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuBindGroupRelease(x.Handle)
 [<AllowNullLiteral>]
 type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle) = 
     let mutable isDisposed = false
@@ -3127,10 +3123,6 @@ type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle) =
         new BindGroupLayout(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuBindGroupLayoutReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuBindGroupLayoutRelease(x.Handle)
 [<AllowNullLiteral>]
 type CommandBuffer(device : Device, handle : CommandBufferHandle) = 
     let mutable isDisposed = false
@@ -3150,10 +3142,6 @@ type CommandBuffer(device : Device, handle : CommandBufferHandle) =
         new CommandBuffer(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuCommandBufferReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuCommandBufferRelease(x.Handle)
 [<AllowNullLiteral>]
 type PipelineLayout(device : Device, handle : PipelineLayoutHandle) = 
     let mutable isDisposed = false
@@ -3173,10 +3161,6 @@ type PipelineLayout(device : Device, handle : PipelineLayoutHandle) =
         new PipelineLayout(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuPipelineLayoutReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuPipelineLayoutRelease(x.Handle)
 [<AllowNullLiteral>]
 type QuerySet(device : Device, handle : QuerySetHandle) = 
     let mutable isDisposed = false
@@ -3196,10 +3180,6 @@ type QuerySet(device : Device, handle : QuerySetHandle) =
         new QuerySet(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuQuerySetReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuQuerySetRelease(x.Handle)
     member inline x.Destroy() : unit = 
         DawnRaw.wgpuQuerySetDestroy(x.Handle)
 [<AllowNullLiteral>]
@@ -3221,10 +3201,6 @@ type RenderBundle(device : Device, handle : RenderBundleHandle) =
         new RenderBundle(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuRenderBundleReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuRenderBundleRelease(x.Handle)
 [<AllowNullLiteral>]
 type Sampler(device : Device, handle : SamplerHandle) = 
     let mutable isDisposed = false
@@ -3244,10 +3220,6 @@ type Sampler(device : Device, handle : SamplerHandle) =
         new Sampler(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuSamplerReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuSamplerRelease(x.Handle)
 [<AllowNullLiteral>]
 type ShaderModule(device : Device, handle : ShaderModuleHandle) = 
     let mutable isDisposed = false
@@ -3267,10 +3239,6 @@ type ShaderModule(device : Device, handle : ShaderModuleHandle) =
         new ShaderModule(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuShaderModuleReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuShaderModuleRelease(x.Handle)
 [<AllowNullLiteral>]
 type Surface(device : Device, handle : SurfaceHandle) = 
     let mutable isDisposed = false
@@ -3290,10 +3258,6 @@ type Surface(device : Device, handle : SurfaceHandle) =
         new Surface(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuSurfaceReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuSurfaceRelease(x.Handle)
 [<AllowNullLiteral>]
 type TextureView(device : Device, handle : TextureViewHandle) = 
     let mutable isDisposed = false
@@ -3313,10 +3277,6 @@ type TextureView(device : Device, handle : TextureViewHandle) =
         new TextureView(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuTextureViewReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuTextureViewRelease(x.Handle)
 [<AllowNullLiteral>]
 type ComputePipeline(device : Device, handle : ComputePipelineHandle) = 
     let mutable isDisposed = false
@@ -3336,10 +3296,6 @@ type ComputePipeline(device : Device, handle : ComputePipelineHandle) =
         new ComputePipeline(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuComputePipelineReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuComputePipelineRelease(x.Handle)
     member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
         new BindGroupLayout(x.Device, DawnRaw.wgpuComputePipelineGetBindGroupLayout(x.Handle, _GroupIndex))
@@ -3362,10 +3318,6 @@ type Instance(device : Device, handle : InstanceHandle) =
         new Instance(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuInstanceReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuInstanceRelease(x.Handle)
     member inline x.CreateSurface() : Surface = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUSurfaceDescriptor>
@@ -3421,10 +3373,6 @@ type RenderPipeline(device : Device, handle : RenderPipelineHandle) =
         new RenderPipeline(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuRenderPipelineReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuRenderPipelineRelease(x.Handle)
     member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
         new BindGroupLayout(x.Device, DawnRaw.wgpuRenderPipelineGetBindGroupLayout(x.Handle, _GroupIndex))
@@ -3447,10 +3395,6 @@ type SwapChain(device : Device, handle : SwapChainHandle) =
         new SwapChain(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuSwapChainReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuSwapChainRelease(x.Handle)
     member inline x.Configure(Format : TextureFormat, AllowedUsage : TextureUsage, Width : int, Height : int) : unit = 
         let _Format = Format
         let _AllowedUsage = AllowedUsage
@@ -3480,10 +3424,6 @@ type Buffer(device : Device, handle : BufferHandle) =
         new Buffer(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuBufferReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuBufferRelease(x.Handle)
     member inline x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback) : unit = 
         let _Mode = Mode
         let _Offset = Offset
@@ -3561,10 +3501,6 @@ type Fence(device : Device, handle : FenceHandle) =
         new Fence(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuFenceReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuFenceRelease(x.Handle)
     member inline x.GetCompletedValue() : uint64 = 
         DawnRaw.wgpuFenceGetCompletedValue(x.Handle)
     member inline x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback) : unit = 
@@ -3612,10 +3548,6 @@ type Texture(device : Device, handle : TextureHandle) =
         new Texture(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuTextureReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuTextureRelease(x.Handle)
     member inline x.CreateView() : TextureView = 
         let inline _LabelCont (_Label) = 
             let _Format = TextureViewDescriptor.Default.Format
@@ -3701,10 +3633,6 @@ type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle) =
         new ComputePassEncoder(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuComputePassEncoderReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuComputePassEncoderRelease(x.Handle)
     member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
         let inline _MarkerLabelCont (_MarkerLabel) = 
             DawnRaw.wgpuComputePassEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
@@ -3784,10 +3712,6 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle) =
         new RenderBundleEncoder(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuRenderBundleEncoderReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuRenderBundleEncoderRelease(x.Handle)
     member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuRenderBundleEncoderSetPipeline(x.Handle, _Pipeline)
@@ -3996,10 +3920,6 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle) =
         new RenderPassEncoder(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuRenderPassEncoderReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuRenderPassEncoderRelease(x.Handle)
     member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuRenderPassEncoderSetPipeline(x.Handle, _Pipeline)
@@ -4216,10 +4136,6 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle) =
         new CommandEncoder(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuCommandEncoderReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuCommandEncoderRelease(x.Handle)
     member inline x.Finish() : CommandBuffer = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUCommandBufferDescriptor>
@@ -4584,10 +4500,6 @@ type Queue(device : Device, handle : QueueHandle) =
         new Queue(device, handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuQueueReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuQueueRelease(x.Handle)
     member inline x.Submit(Commands : array<CommandBuffer>) : unit = 
         let _CommandsCount = Commands.Length
         let _Commands = NativePtr.stackalloc _CommandsCount
@@ -4708,10 +4620,6 @@ type Device(handle : DeviceHandle) =
         new Device(handle)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
-    member inline x.Reference() : unit = 
-        DawnRaw.wgpuDeviceReference(x.Handle)
-    member inline x.Release() : unit = 
-        DawnRaw.wgpuDeviceRelease(x.Handle)
     member inline x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup = 
         let inline _LabelCont (_Label) = 
             let _Layout = (if isNull Descriptor.Layout then BindGroupLayoutHandle.Null else Descriptor.Layout.Handle)
