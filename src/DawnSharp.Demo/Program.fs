@@ -7,6 +7,7 @@ open Microsoft.FSharp.NativeInterop
 open System.Runtime.InteropServices
 
 #nowarn "9"
+#nowarn "40"
 
 type AdapterHandle = struct val mutable public Handle : nativeint end
 type BackendBindingHandle = struct val mutable public Handle : nativeint end
@@ -615,6 +616,1374 @@ module PCITable =
 
 open Silk.NET.GLFW
 
+module ExprCompiler =
+    open Aardvark.Base.IL
+    open System.Reflection
+    open System.Reflection.Emit
+    open Microsoft.FSharp.Reflection
+    open Microsoft.FSharp.Quotations
+    open Microsoft.FSharp.Quotations.Patterns
+    open Microsoft.FSharp.Quotations.DerivedPatterns
+    open Aardvark.Base
+
+    [<AutoOpen>]
+    module ExprExtensions =
+
+        type FSharpType with
+            static member GetFunctionSignature(t : Type) =
+                if FSharpType.IsFunction t then
+                    let (a,r) = FSharpType.GetFunctionElements t
+                    if FSharpType.IsTuple a then
+                        let a0 = FSharpType.GetTupleElements a |> Array.toList
+                        let (args, ret) = FSharpType.GetFunctionSignature(r)
+                        a0 :: args, ret
+                    else
+                        let a0 = [a]
+                        let (args, ret) = FSharpType.GetFunctionSignature(r)
+                        a0 :: args, ret
+                else
+                    [], t
+
+
+
+        type Expr with
+            static member TupleGet(tup : Expr, i : int) =
+                let prop = tup.Type.GetProperty(sprintf "Item%d" (i + 1))
+                Expr.PropertyGet(tup, prop)
+
+        let (|PipeRight|_|) (e : Expr) =
+            match e with
+            | Call(None, mi, [a;f]) when mi.Name = "op_PipeRight" -> Some (f, a)
+            | _ -> None
+            
+        let (|PipeRight2|_|) (e : Expr) =
+            match e with
+            | Call(None, mi, [arg ;f]) when mi.Name = "op_PipeRight2" -> 
+                match arg with
+                | NewTuple [a;b] -> Some (f, a, b)
+                | _ -> Some (f, Expr.TupleGet(arg, 0), Expr.TupleGet(arg, 1))
+            | _ -> None
+
+        let (|PipeLeft|_|) (e : Expr) =
+            match e with
+            | Call(None, mi, [f;a]) when mi.Name = "op_PipeLeft" -> Some (f, a)
+            | _ -> None
+
+
+        let (|OptionalCoerce|_|) (e : Expr) =
+            match e with
+                | Coerce(e,t) -> Some(e,t)
+                | _ -> Some(e, e.Type)
+
+        /// detects foreach expressions using the F# standard-layout
+        let (|ForEach|_|) (e : Expr) =
+            match e with
+                | Let(e, Call(Some(OptionalCoerce(seq,_)), Method("GetEnumerator",_), []),
+                        TryFinally(
+                            WhileLoop(Call(Some (Var e1), Method("MoveNext",_), []),
+                                Let(i, PropertyGet(Some (Var e2), current, []), b)
+                            ),
+                            IfThenElse(TypeTest(OptionalCoerce(Var e3, oType0), dType),
+                                Call(Some (Call(None, Method("UnboxGeneric",_), [OptionalCoerce(e4, oType1)])), Method("Dispose",_), []),
+                                Value(_)
+                            )
+                        )
+                    ) when e1 = e && e2 = e && e3 = e && current.Name = "Current" && oType0 = typeof<obj> && oType1 = typeof<obj> && dType = typeof<System.IDisposable> ->
+                    Some(i, seq, b)
+                | _ -> 
+                    None
+
+        let (|CreateRange|_|) (e : Expr) =
+            match e with
+                | Call(None, Method("op_RangeStep",_), [first; step; last]) -> Some(first, step, last)
+                | Call(None, Method("op_Range",_), [first; last]) -> Some(first, Expr.Value(1), last)
+                | _ -> None
+
+        let rec (|RangeSequence|_|) (e : Expr) =
+            match e with
+                | Call(None, Method(("ToArray" | "ToList"), _), [RangeSequence(first, step, last)]) ->
+                    Some(first, step, last)
+
+                | Call(None, Method("CreateSequence",_), [RangeSequence(first, step, last)]) ->
+                    Some(first, step, last)
+
+                | CreateRange(first, step, last) ->
+                    Some(first, step, last)
+                
+
+                | _ -> 
+                    None
+
+
+        let (|ForInteger|_|) (e : Expr) =
+            match e with
+                | ForIntegerRangeLoop(v,first,last,body) -> 
+                    Some(v,first,Expr.Value(1),last,body)
+
+
+
+                | Let(seq, RangeSequence(first, step, last), ForEach(v, Var seq1, body)) when seq = seq1 ->
+                    Some(v, first, step, last, body)
+
+
+                | _ -> None
+
+
+    module private rec Compiler = 
+        let rec meth (e : Expr) =
+            match e with
+            | Lambda(_, b) -> meth b
+            | Call(_,mi,_) -> mi
+            | PropertyGet(_,p,_) -> p.GetMethod
+            | Sequential(_, r) -> meth r
+            | Let(_,_,b) -> meth b
+            | TryWith(_,_,_,_,h) -> meth h
+            | _ -> failwithf "bad meth: %A" e 
+
+        let table (a : seq<'a * 'b>) =
+            let d = System.Collections.Generic.Dictionary<'a, 'b>()
+            for (k, v) in a do
+                d.[k] <- v
+            fun a ->
+                match d.TryGetValue a with
+                | (true, v) -> Some v
+                | _ -> None
+
+
+      
+        type VarAccess =
+            | Local of LocalBuilder
+            | Field of FieldInfo
+            | Argument of int
+            | Property of VarAccess * PropertyInfo
+            
+            member x.Type =
+                match x with
+                | Local l -> l.LocalType
+                | Field f -> f.FieldType
+                | Argument _ -> failwith "no arg type"
+                | Property(_,p) -> p.PropertyType
+
+
+            member x.write (il : ILGenerator) =
+                match x with
+                | Local l -> 
+                    il.Emit(OpCodes.Stloc, l)
+                | Field f -> 
+                    let tmp = il.DeclareLocal(f.FieldType)
+                    il.Emit(OpCodes.Stloc, tmp)
+                    il.Emit(OpCodes.Ldarg_0)
+                    il.Emit(OpCodes.Ldloc, tmp)
+                    il.Emit(OpCodes.Stfld, f)
+                | Argument idx -> 
+                    il.Emit(OpCodes.Starg, idx + 1)
+                | Property(a, p) ->
+                    let tmp = il.DeclareLocal(p.PropertyType)
+                    il.Emit(OpCodes.Stloc, tmp)
+                    a.read il
+                    il.Emit(OpCodes.Ldloc, tmp)
+                    il.EmitCall(OpCodes.Callvirt, p.SetMethod, null)
+
+            member x.read (il : ILGenerator) =
+                match x with
+                | Local l -> 
+                    il.Emit(OpCodes.Ldloc, l)
+                | Field f -> 
+                    il.Emit(OpCodes.Ldarg_0)
+                    il.Emit(OpCodes.Ldfld, f)
+                | Argument idx -> 
+                    match idx with
+                    | 0 -> il.Emit(OpCodes.Ldarg_1)
+                    | 1 -> il.Emit(OpCodes.Ldarg_2)
+                    | 2 -> il.Emit(OpCodes.Ldarg_3)
+                    | _ -> il.Emit(OpCodes.Ldarg, idx + 1)
+                    
+                | Property(a, p) -> 
+                    a.read il
+                    let get = p.GetMethod
+                    if get.IsVirtual then il.EmitCall(OpCodes.Callvirt, get, null)
+                    else il.EmitCall(OpCodes.Call, get, null)
+
+        type State =
+            {
+                il                  : ILGenerator
+                vars                : Map<Var, VarAccess>
+                currentException    : option<VarAccess>
+            }
+            
+        let builtins =
+            table [|
+                meth <@ (+) : uint8 -> uint8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : uint16 -> uint16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : uint32 -> uint32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : uint64 -> uint64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : int8 -> int8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : int16 -> int16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : int32 -> int32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                meth <@ (+) : int64 -> int64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Add))
+                
+                meth <@ (-) : uint8 -> uint8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : uint16 -> uint16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : uint32 -> uint32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : uint64 -> uint64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : int8 -> int8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : int16 -> int16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : int32 -> int32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+                meth <@ (-) : int64 -> int64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Sub))
+
+                
+                meth <@ (*) : uint8 -> uint8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : uint16 -> uint16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : uint32 -> uint32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : uint64 -> uint64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : int8 -> int8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : int16 -> int16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : int32 -> int32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+                meth <@ (*) : int64 -> int64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Mul))
+
+            
+                meth <@ (/) : uint8 -> uint8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div_Un))
+                meth <@ (/) : uint16 -> uint16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div_Un))
+                meth <@ (/) : uint32 -> uint32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div_Un))
+                meth <@ (/) : uint64 -> uint64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div_Un))
+                meth <@ (/) : int8 -> int8 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div))
+                meth <@ (/) : int16 -> int16 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div))
+                meth <@ (/) : int32 -> int32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div))
+                meth <@ (/) : int64 -> int64 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Div))
+
+                meth <@ (<) : int32 -> int32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Clt))
+                meth <@ (>) : int32 -> int32 -> _ @>, (fun (il : State) -> il.il.Emit(OpCodes.Cgt))
+                
+                meth <@ raise @>, (fun s -> 
+                    s.il.Emit(OpCodes.Throw)
+                )
+                meth <@ try () with _ -> reraise() @>, (fun s -> 
+                    let ex = s.currentException.Value
+                    ex.read s.il
+                    s.il.Emit(OpCodes.Throw)
+                    //s.il.ThrowException ex.Type
+                )
+
+            |]
+
+        let bAss = AssemblyBuilder.DefineDynamicAssembly(AssemblyName "compiler", AssemblyBuilderAccess.RunAndCollect)
+        let bMod = bAss.DefineDynamicModule "main"
+
+        let rec getFrontendFSharpFuncType (args : list<list<Type>>) (ret : Type) =
+            let pars = 
+                args |> List.map (fun a ->
+                    match a with
+                    | [] -> failwithf "empty tuple"
+                    | [a] -> a
+                    | many -> FSharpType.MakeTupleType (many |> List.toArray)
+                )
+
+            let rec buildType (pars : list<Type>) (ret : Type) = 
+                match pars with
+                | [] -> 
+                    ret
+                | a::rest ->
+                    typedefof<FSharpFunc<_,_>>.MakeGenericType [| a; buildType rest ret |]
+
+            buildType pars ret
+      
+        let rec getFSharpFuncType (args : list<list<Type>>) (ret : Type) =
+            let pars = 
+                args |> List.map (fun a ->
+                    match a with
+                    | [] -> failwithf "empty tuple"
+                    | [a] -> a
+                    | many -> FSharpType.MakeTupleType (many |> List.toArray)
+                )
+
+            let rec buildType (pars : list<Type>) (ret : Type)= 
+
+                match pars with
+                | [] -> ret
+                | a::b::c::d::e::rest ->
+                    typedefof<OptimizedClosures.FSharpFunc<_,_,_,_,_,_>>.MakeGenericType [| a; b; c; d; e; buildType rest ret |]
+                | a::b::c::d::rest ->
+                    typedefof<OptimizedClosures.FSharpFunc<_,_,_,_,_>>.MakeGenericType [| a; b; c; d; buildType rest ret |]
+                | a::b::c::rest ->
+                    typedefof<OptimizedClosures.FSharpFunc<_,_,_,_>>.MakeGenericType [| a; b; c; buildType rest ret |]
+                | a::b::rest ->
+                    typedefof<OptimizedClosures.FSharpFunc<_,_,_>>.MakeGenericType [| a; b; buildType rest ret |]
+                | a::rest ->
+                    typedefof<FSharpFunc<_,_>>.MakeGenericType [| a; buildType rest ret |]
+
+            buildType pars ret
+
+        and push (state : State) (a : list<Expr>) =
+            match a with
+            | [a] -> 
+                compileExpr state a
+                a.Type
+            | many ->
+                let mt = many |> List.map (fun a -> a.Type) |> List.toArray
+                let tup = mt |> FSharpType.MakeTupleType
+                for m in many do
+                    compileExpr state m
+                state.il.Emit(OpCodes.Newobj, tup.GetConstructor mt)
+                tup
+
+        and invoke (state : State) (stackType : Type) (ret : Type) (args : list<list<Expr>>) : unit =
+            match args with
+            | [] ->
+                ()
+
+            | [a0] ->
+                let t0 = push state a0
+                let typ = typedefof<int -> int>
+                let typ = typ.MakeGenericType [| t0; ret |]
+
+                let mi = 
+                    typ.GetMethods(BindingFlags.Instance ||| BindingFlags.Public)
+                    |> Array.find (fun mi -> mi.Name = "Invoke" && mi.GetParameters().Length = 1)
+                state.il.EmitCall(OpCodes.Callvirt, mi, null)
+                if mi.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+            
+            | [a0; a1] ->
+                let t0 = push state a0
+                let t1 = push state a1
+                let typ = typedefof<int -> int>
+                let typ = typ.MakeGenericType [| t0; t1 |]
+
+                let mig = 
+                    typ.GetMethods(BindingFlags.Static ||| BindingFlags.Public)
+                    |> Array.find (fun mi -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 3)
+                let mi = mig.MakeGenericMethod [| ret |]
+                state.il.EmitCall(OpCodes.Call, mi, null)
+                if mi.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+                    
+            | [a0; a1; a2] ->
+                let t0 = push state a0
+                let t1 = push state a1
+                let t2 = push state a2
+                let typ = typedefof<int -> int>
+                let typ = typ.MakeGenericType [| t0; t1 |]
+
+                let mig = 
+                    typ.GetMethods(BindingFlags.Static ||| BindingFlags.Public)
+                    |> Array.find (fun mi -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 4)
+                let mi = mig.MakeGenericMethod [| t2; ret |]
+                state.il.EmitCall(OpCodes.Call, mi, null)
+                if mi.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+                    
+            | [a0; a1; a2; a3] ->
+                let t0 = push state a0
+                let t1 = push state a1
+                let t2 = push state a2
+                let t3 = push state a3
+                let typ = typedefof<int -> int>
+                let typ = typ.MakeGenericType [| t0; t1 |]
+
+                let mig = 
+                    typ.GetMethods(BindingFlags.Static ||| BindingFlags.Public)
+                    |> Array.find (fun mi -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 5)
+                let mi = mig.MakeGenericMethod [| t2; t3; ret |]
+                state.il.EmitCall(OpCodes.Call, mi, null)
+                if mi.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+
+            | [a0; a1; a2; a3; a4] ->
+                let t0 = push state a0
+                let t1 = push state a1
+                let t2 = push state a2
+                let t3 = push state a3
+                let t4 = push state a4
+                let typ = typedefof<int -> int>
+                let typ = typ.MakeGenericType [| t0; t1 |]
+
+                let mig = 
+                    typ.GetMethods(BindingFlags.Static ||| BindingFlags.Public)
+                    |> Array.find (fun mi -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 6)
+                let mi = mig.MakeGenericMethod [| t2; t3; t4; ret |]
+                state.il.EmitCall(OpCodes.Call, mi, null)
+                if mi.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+                    
+            | a0 :: a1 :: a2 :: a3 :: a4 :: rest ->
+                let t0 = push state a0
+                let t1 = push state a1
+                let t2 = push state a2
+                let t3 = push state a3
+                let t4 = push state a4
+                let typ = typedefof<int -> int>
+                let typ = typ.MakeGenericType [| t0; t1 |]
+
+                let mig = 
+                    typ.GetMethods(BindingFlags.Static ||| BindingFlags.Public)
+                    |> Array.find (fun mi -> mi.Name = "InvokeFast" && mi.GetParameters().Length = 6)
+                let fType = getFSharpFuncType (args |> List.map (List.map (fun e -> e.Type))) ret
+                let mi = mig.MakeGenericMethod [| t2; t3; t4; fType |]
+
+
+                state.il.EmitCall(OpCodes.Call, mi, null)
+                invoke state fType ret rest
+                    
+        and compileExpr (state : State) (e : Expr) : unit =
+            match e with
+            | PipeRight(f, a) | PipeLeft(f, a) ->
+                compileExpr state (Expr.Application(f, a))
+                
+            | Call(None, mi, [arr; idx]) when mi.Name = "GetArray" ->
+                compileExpr state arr
+                compileExpr state idx
+                state.il.Emit(OpCodes.Ldelem, arr.Type.GetElementType())
+
+            | Call(None, mi, [exn]) when mi.Name = "Raise" && typeof<Exception>.IsAssignableFrom exn.Type ->
+                compileExpr state exn
+                state.il.Emit(OpCodes.Throw)
+                //state.il.ThrowException(exn.Type)
+            
+
+            | Application(Lambda(v,b), e) ->
+                compileExpr state (Expr.Let(v, e, b))
+
+            | ForEach(v, seq, body) ->
+                let l = state.il.DeclareLocal(v.Type)
+                let e = state.il.DeclareLocal(typedefof<System.Collections.Generic.IEnumerator<_>>.MakeGenericType [| v.Type |])
+
+                compileExpr state seq
+                let getEnum = seq.Type.GetInterface(typedefof<seq<_>>.FullName).GetMethod("GetEnumerator")
+                state.il.EmitCall(OpCodes.Callvirt, getEnum, null)
+                state.il.Emit(OpCodes.Stloc, e)
+
+
+                let moveNext = e.LocalType.GetInterface(typeof<System.Collections.IEnumerator>.FullName).GetMethod "MoveNext"
+                let current = e.LocalType.GetProperty "Current"
+                let dispose = e.LocalType.GetInterface(typeof<System.IDisposable>.FullName).GetMethod "Dispose"
+
+                let _s = state.il.DefineLabel()
+                let _e = state.il.DefineLabel()
+                
+                let ex = state.il.BeginExceptionBlock()
+
+                state.il.MarkLabel(_s)
+                state.il.Emit(OpCodes.Ldloc, e)
+                state.il.EmitCall(OpCodes.Callvirt, moveNext, null)
+                state.il.Emit(OpCodes.Brfalse, _e)
+
+                state.il.Emit(OpCodes.Ldloc, e)
+                state.il.EmitCall(OpCodes.Callvirt, current.GetMethod, null)
+                state.il.Emit(OpCodes.Stloc, l)
+
+                compileExpr { state with vars = Map.add v (Local l) state.vars } body
+
+                state.il.Emit(OpCodes.Br, _s)
+
+                state.il.MarkLabel(_e)
+                
+                state.il.BeginFinallyBlock()
+                state.il.Emit(OpCodes.Ldloc, e)
+                state.il.EmitCall(OpCodes.Callvirt, dispose, null)
+                state.il.EndExceptionBlock()
+
+            | ForInteger(v, start, step, stop, body) ->
+                let l = state.il.DeclareLocal v.Type
+                let e = state.il.DeclareLocal v.Type
+                let s = state.il.DeclareLocal v.Type
+
+                compileExpr state start
+                state.il.Emit(OpCodes.Stloc, l)
+
+                compileExpr state stop
+                state.il.Emit(OpCodes.Stloc, e)
+
+                compileExpr state step
+                state.il.Emit(OpCodes.Stloc, s)
+
+                let _e = state.il.DefineLabel()
+                let _s = state.il.DefineLabel()
+
+                state.il.MarkLabel(_s)
+                state.il.Emit(OpCodes.Ldloc, l)
+                state.il.Emit(OpCodes.Ldloc, e)
+                state.il.Emit(OpCodes.Bgt, _e)
+
+                compileExpr { state with vars = Map.add v (Local l) state.vars } body
+
+                state.il.Emit(OpCodes.Ldloc, l)
+                state.il.Emit(OpCodes.Ldloc, s)
+                state.il.Emit(OpCodes.Add)
+                state.il.Emit(OpCodes.Stloc, l)
+
+                state.il.Emit(OpCodes.Br, _s)
+
+                state.il.MarkLabel(_e)
+
+            | CallWithWitnesses(t, original, witness, lambdas, args) ->
+                match builtins original with
+                | Some emit ->
+                    match t with
+                    | Some t -> compileExpr state t
+                    | None -> ()
+                    for a in args do compileExpr state a
+                    emit state
+
+                | None ->
+                    match t with
+                    | Some t -> compileExpr state t
+                    | None -> ()
+
+                    //inlineCode state t witness lambdas args
+
+                    let pp = List.append lambdas args
+                    for arg, p in List.zip pp (Array.toList (witness.GetParameters())) do
+                        // TODO: better lambda compiler (using builtins?)
+                        compileExpr state arg
+
+                    if witness.IsVirtual then state.il.EmitCall(OpCodes.Callvirt, witness, null)
+                    else state.il.EmitCall(OpCodes.Call, witness, null)
+                    if witness.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+
+            | AddressOf _ | AddressSet _ ->
+                failwith "pointers not implemented"
+
+            | DefaultValue t ->
+                if t.IsValueType then state.il.Emit(OpCodes.Newobj, t.GetConstructor [||])
+                else state.il.Emit(OpCodes.Ldnull)
+                
+            | FieldGet(Some t, fld) ->
+                compileExpr state t
+                state.il.Emit(OpCodes.Ldfld, fld)
+            
+            | FieldGet(None, fld) ->
+                state.il.Emit(OpCodes.Ldsfld, fld)
+            
+            | FieldSet(Some t, fld, value) ->
+                compileExpr state t
+                compileExpr state value
+                state.il.Emit(OpCodes.Stfld, fld)
+
+            | FieldSet(None, fld, value) ->
+                compileExpr state value
+                state.il.Emit(OpCodes.Stsfld, fld)
+                
+            | IfThenElse(c, i, e) ->
+                let lf = state.il.DefineLabel()
+                let le = state.il.DefineLabel()
+                compileExpr state c
+                state.il.Emit(OpCodes.Brfalse, lf)
+                compileExpr state i
+                state.il.Emit(OpCodes.Br, le)
+                state.il.MarkLabel lf
+                compileExpr state e
+                state.il.MarkLabel le
+                
+            | NewArray(t, args) ->
+                let l = state.il.DeclareLocal(t.MakeArrayType())
+                let cnt = List.length args
+                state.il.Emit(OpCodes.Ldc_I4, cnt)
+                state.il.Emit(OpCodes.Newarr, t)
+                state.il.Emit(OpCodes.Stloc, l)
+
+                let mutable idx = 0
+                for a in args do
+                    state.il.Emit(OpCodes.Ldloc, l)
+                    state.il.Emit(OpCodes.Ldc_I4, idx)
+                    compileExpr state a
+                    state.il.Emit(OpCodes.Stelem, t)
+                    idx <- idx + 1
+                    
+                state.il.Emit(OpCodes.Ldloc, l)
+
+            | NewDelegate(typ, vars, body) ->
+                failwith "delegate"
+                
+            | NewObject(ctor, args) ->
+                for a in args do compileExpr state a
+                state.il.Emit(OpCodes.Newobj, ctor)
+
+            | NewRecord(typ, args) ->
+                let pars = args |> List.map (fun a -> a.Type) |> List.toArray
+                let ctor = typ.GetConstructor(BindingFlags.Public ||| BindingFlags.NonPublic ||| BindingFlags.Instance, Type.DefaultBinder, pars, null)
+                for a in args do
+                    compileExpr state a
+                state.il.Emit(OpCodes.Newobj, ctor)
+
+            | NewTuple(args) ->
+                let pars = args |> List.map (fun a -> a.Type) |> List.toArray
+                let ctor = e.Type.GetConstructor pars
+                for a in args do
+                    compileExpr state a
+                state.il.Emit(OpCodes.Newobj, ctor)
+
+            | NewUnionCase(ci, args) ->
+                let meth = ci.DeclaringType.GetMethod(ci.Name)
+                for a in args do
+                    compileExpr state a
+                state.il.EmitCall(OpCodes.Call, meth, null)
+
+
+
+            | Let(v, (Lambdas _ as e), b) ->
+                b.Substitute (fun vi ->
+                    if vi = v then Some e
+                    else None
+                ) |> compileExpr state
+
+            | Lambdas(args, body) ->
+                let _lType, lCtor, lClosure = compileFunction args body
+                for m in lClosure do
+                    compileExpr state (Expr.Var m)
+                state.il.Emit(OpCodes.Newobj, lCtor)
+                
+            | Let(v, e, b) ->
+                let l = state.il.DeclareLocal(v.Type)
+                compileExpr state e
+                state.il.Emit(OpCodes.Stloc, l)
+                compileExpr { state with vars = Map.add v (Local l) state.vars } b
+
+            | Coerce(e, t) ->
+                compileExpr state e
+                match e.Type.IsValueType, t.IsValueType with
+                | false, true -> state.il.Emit(OpCodes.Unbox, t)
+                | true, false -> state.il.Emit(OpCodes.Box, e.Type)
+                | false, false -> state.il.Emit(OpCodes.Castclass, t)
+                | true, true -> failwith "cannot coerce structs"
+
+            | Call(t, mi, args) ->
+                match t with
+                | Some t -> compileExpr state t
+                | None -> ()
+                for a in args do
+                    compileExpr state a
+
+                match builtins mi with
+                | Some emit ->
+                    emit state
+                | None -> 
+                    let code = if mi.IsVirtual then OpCodes.Callvirt else OpCodes.Call
+                    state.il.EmitCall(code, mi, null)
+                    if mi.ReturnType = typeof<unit> then state.il.Emit(OpCodes.Pop)
+
+            
+            | Sequential(l, r) ->
+                compileExpr state l
+                compileExpr state r
+
+            | VarSet(v, e) ->
+                compileExpr state e
+                state.vars.[v].write state.il
+                
+            | PropertyGet(Some t, prop, idx) ->
+                compileExpr state (Expr.Call(t, prop.GetMethod, idx))
+
+            | PropertyGet(None, prop, idx) ->
+                compileExpr state (Expr.Call(prop.GetMethod, idx))
+
+            | PropertySet(Some t, prop, idx, value) ->
+                compileExpr state (Expr.Call(t, prop.SetMethod, idx @ [value]))
+                
+            | PropertySet(None, prop, idx, value) ->
+                compileExpr state (Expr.Call(prop.SetMethod, idx @ [value]))
+
+            | Applications(expr, args) ->
+                compileExpr state expr
+                invoke state expr.Type e.Type args
+
+            | QuoteRaw e | QuoteTyped e ->
+                failwith "quote"
+
+            | TypeTest(e, t) ->
+                compileExpr state e
+                if not e.Type.IsValueType then state.il.Emit(OpCodes.Box, e.Type)
+                state.il.Emit(OpCodes.Isinst, t)
+
+            | TryFinally(t, f) ->
+                state.il.BeginExceptionBlock() |> ignore
+                compileExpr state t
+                state.il.BeginFinallyBlock()
+                compileExpr state f
+                state.il.EndExceptionBlock()
+
+            | TryWith(body, _, _, var, handler) ->
+
+                let block = state.il.BeginExceptionBlock()
+                compileExpr state body
+
+                
+                let rec visit (e : Expr) =
+                    match e with
+                    | IfThenElse(TypeTest(Var ex, exType), comp, rest) when ex = var ->
+                        state.il.BeginCatchBlock(exType)
+                        let l = state.il.DeclareLocal(exType)
+                        state.il.Emit(OpCodes.Stloc, l)
+                        compileExpr { state with vars = Map.add ex (Local l) state.vars; currentException = Some (Local l) } comp
+
+                        visit rest
+                    | Call(None, r, []) when r.Name = "Reraise" ->
+                        ()
+                    | _ ->  
+                        failwith "bad catch"
+
+                visit handler
+
+                state.il.EndExceptionBlock()
+
+            | TupleGet(tup, item) ->
+                let prop = tup.Type.GetProperty(sprintf "Item%d" (item + 1))
+                compileExpr state (Expr.Call(tup, prop.GetMethod, []))
+
+            | UnionCaseTest(e, ci) ->
+                let tp = e.Type.GetProperty "Tag"
+                let tt = ci.Tag
+                compileExpr state <@ %%(Expr.PropertyGet(e, tp)) = tt @>
+
+            | Var v ->
+                match Map.tryFind v state.vars with
+                | Some v -> v.read state.il
+                | None -> failwithf "unbound variable: %A" v
+
+            | WhileLoop(guard, body) ->
+                
+                let _s = state.il.DefineLabel()
+                let _e = state.il.DefineLabel()
+
+
+                state.il.MarkLabel(_s)
+                compileExpr state guard
+                state.il.Emit(OpCodes.Brfalse, _e)
+
+                compileExpr state body
+                state.il.Emit(OpCodes.Br, _s)
+
+                state.il.MarkLabel(_e)
+
+
+
+
+
+            | Value(value, typ) ->  
+                if typ = typeof<unit> then
+                    state.il.Emit(OpCodes.Ldnull)
+                elif typ = typeof<string> then
+                    state.il.Emit(OpCodes.Ldstr, unbox<string> value)
+                elif typ = typeof<int8> then 
+                    match unbox<int8> value with
+                    | 0y -> state.il.Emit(OpCodes.Ldc_I4_0)
+                    | 1y -> state.il.Emit(OpCodes.Ldc_I4_1)
+                    | 2y -> state.il.Emit(OpCodes.Ldc_I4_2)
+                    | 3y -> state.il.Emit(OpCodes.Ldc_I4_3)
+                    | 4y -> state.il.Emit(OpCodes.Ldc_I4_4)
+                    | 5y -> state.il.Emit(OpCodes.Ldc_I4_5)
+                    | 6y -> state.il.Emit(OpCodes.Ldc_I4_6)
+                    | 7y -> state.il.Emit(OpCodes.Ldc_I4_7)
+                    | 8y -> state.il.Emit(OpCodes.Ldc_I4_8)
+                    | v -> state.il.Emit(OpCodes.Ldc_I4, int v)
+                elif typ = typeof<int> then
+                    match unbox<int> value with
+                    | 0 -> state.il.Emit(OpCodes.Ldc_I4_0)
+                    | 1 -> state.il.Emit(OpCodes.Ldc_I4_1)
+                    | 2 -> state.il.Emit(OpCodes.Ldc_I4_2)
+                    | 3 -> state.il.Emit(OpCodes.Ldc_I4_3)
+                    | 4 -> state.il.Emit(OpCodes.Ldc_I4_4)
+                    | 5 -> state.il.Emit(OpCodes.Ldc_I4_5)
+                    | 6 -> state.il.Emit(OpCodes.Ldc_I4_6)
+                    | 7 -> state.il.Emit(OpCodes.Ldc_I4_7)
+                    | 8 -> state.il.Emit(OpCodes.Ldc_I4_8)
+                    | v -> state.il.Emit(OpCodes.Ldc_I4, v)
+                else
+                    failwithf "bad constant: %A" value
+            | _ ->
+                failwithf "bad expr: %A" e
+                ()
+
+
+        and compileFunction (args : list<list<Var>>) (body : Expr) : Type * ConstructorInfo * list<Var> =
+        
+            let loads initial (args : list<list<Var>>) =
+                (initial, Seq.indexed args) ||> Seq.fold (fun map (ai, vs) ->
+                    match vs with
+                    | [v] -> 
+                        Map.add v (Argument ai) map
+                    | _ ->
+                        let typ = FSharpType.MakeTupleType (vs |> List.map (fun v -> v.Type) |> List.toArray)
+                        (map, Seq.indexed vs) ||> Seq.fold (fun map (ti, v) ->
+                            let prop = typ.GetProperty(sprintf "Item%d" (ti + 1))
+                            Map.add v (Property(Argument ai, prop)) map
+                        )
+                )
+
+
+            let rec compile (args : list<list<Var>>) (body : Expr) : ConstructorInfo * list<Var> =
+                match args with
+                | ([] as args) 
+                | ([_] as args) 
+                | ([_;_] as args) 
+                | ([_;_;_] as args) 
+                | ([_;_;_;_] as args) 
+                | ([_;_;_;_;_] as args) ->
+                    let fType = getFSharpFuncType (args |> List.map (List.map (fun a -> a.Type))) body.Type
+                    let bType = bMod.DefineType(Guid.NewGuid().ToString(), TypeAttributes.Class, fType)
+
+                    let free = 
+                        let set = body.GetFreeVars() |> Set.ofSeq 
+                        (set, args) ||> List.fold (fun set a0 ->
+                            (set, a0) ||> List.fold (fun s a -> Set.remove a s)
+                        ) |> Set.toList
+
+                    // ctor
+                    let ctorArgs = free |> Seq.map (fun f -> f.Type) |> Seq.toArray
+                    let fields = ctorArgs |> Array.mapi (fun i t -> bType.DefineField(sprintf "closure%d" i, t, FieldAttributes.InitOnly ||| FieldAttributes.Private))
+                    let bCtor = bType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, ctorArgs)
+                    let il = bCtor.GetILGenerator()
+                    for i, f in Seq.indexed fields do
+                        il.Emit(OpCodes.Ldarg_0)
+                        il.Emit(OpCodes.Ldarg, i+1)
+                        il.Emit(OpCodes.Stfld, f)
+                    il.Emit(OpCodes.Ret)
+
+                    // invoke
+                    let argTypes = 
+                        args |> List.toArray |> Array.map (fun a0 ->
+                            match a0 with 
+                            | [a] -> a.Type 
+                            | _ -> FSharpType.MakeTupleType(a0 |> List.map (fun a -> a.Type) |> List.toArray)
+                        )
+
+                    let bInvoke = bType.DefineMethod("Invoke", MethodAttributes.Virtual ||| MethodAttributes.Public, body.Type, argTypes)
+                    let il = bInvoke.GetILGenerator()
+                    let closure = 
+                        (free, Array.toList fields) ||> List.map2 (fun v f -> 
+                            v, Field f
+                        ) 
+                        |> Map.ofList
+
+                    compileExpr { il = il; vars = loads closure args; currentException = None } body
+                    if body.Type = typeof<unit> then il.Emit(OpCodes.Ldnull)
+                    il.Emit(OpCodes.Ret)
+
+                    // overrides
+                    let baseInvoke = fType.GetMethod("Invoke", argTypes)
+                    bType.DefineMethodOverride(bInvoke, baseInvoke)
+
+
+                    let t = bType.CreateType()
+                    let ctor = t.GetConstructor ctorArgs
+
+                    
+
+                    ctor, free
+
+                | a0::a1::a2::a3::a4::rest ->
+                    let cRest, closureRest = compile rest body
+                    let tRest = getFrontendFSharpFuncType (rest |> List.map (List.map (fun a -> a.Type))) body.Type
+
+                    compile [a0;a1;a2;a3;a4] (
+                        Expr.Coerce(Expr.NewObject(cRest, closureRest |> List.map Expr.Var), tRest)
+                    )
+
+
+            let ctor, closure = compile args body
+            let typ = getFrontendFSharpFuncType (args |> List.map (List.map (fun a -> a.Type))) body.Type
+            typ, ctor, closure
+    
+
+        and inlineCode (state : State) (target : option<Expr>) (witness : MethodInfo) (lambdas : list<Expr>) (args : list<Expr>) =
+            let def = Disassembler.disassemble witness
+            let lambdas = List.toArray lambdas
+
+            let pars = witness.GetParameters() |> Array.skip lambdas.Length |> Array.toList
+
+            let mutable overrides = Map.empty
+
+            match target with
+            | Some target ->
+                failwith "non-static"
+            | None ->
+                ()
+
+            for pi, (p, a) in Seq.indexed (List.zip pars args) do
+                compileExpr state a
+                let l = state.il.DeclareLocal a.Type
+                state.il.Emit(OpCodes.Stloc, l)
+                overrides <- Map.add (pi + lambdas.Length) (Choice1Of2 (Local l)) overrides
+            
+            for pi, l in Seq.indexed lambdas do
+                overrides <- Map.add pi (Choice2Of2 l) overrides
+                
+
+            let rec skip (n : int) (l : list<'a>) =
+                if n <= 0 then l
+                else
+                    match l with
+                    | [] -> []
+                    | _ :: t -> skip (n-1) t
+                    
+
+            //let assState : Assembler.State = { Assembler.State.generator = state.il; locals = Map.empty; labels = Map.empty; stack = [] }
+
+            let dict = Dict<Local, LocalBuilder>()
+
+            let loc (l : Local) = dict.GetOrCreate(l, fun l -> state.il.DeclareLocal(l.Type))
+
+            let rec run (stack : list<Option<Expr>>) (vars : Map<Local, Expr>) (i : list<Instruction>) =
+                
+                match i with
+                | [] ->
+                    ()
+
+                | Ldarg idx :: rest ->
+                    match Map.tryFind idx overrides with
+                    | Some (Choice1Of2 acc) ->
+                        acc.read state.il
+                        run (None :: stack) vars rest
+                    | Some (Choice2Of2 lambda) -> 
+                        run (Some lambda :: stack) vars rest
+                    | None ->
+                        failwithf "bad arg: %A" idx
+
+                | Stloc l :: rest ->
+                    match stack with
+                    | Some h :: t ->
+                        run t (Map.add l h vars) rest
+                    | None :: t ->
+                        state.il.Emit(OpCodes.Stloc, loc l)
+                        //Assembler.assembleTo state.il [Stloc l]
+                        run t vars rest
+                    | _ ->
+                        failwith "empty stack"
+                        
+                | Ldloc l :: rest ->
+                    match Map.tryFind l vars with
+                    | Some e ->
+                        run (Some e :: stack) vars rest
+                    | None ->
+                        state.il.Emit(OpCodes.Ldloc, loc l)
+                        //Assembler.assembleTo' state.il [Ldloc l]
+                        run (None :: stack) vars rest
+                      
+                | Ret :: rest ->
+                    run stack vars rest
+                    
+                | Tail :: rest ->
+                    run stack vars rest
+
+                | IL.Call mi :: rest when mi.Name = "Invoke" || mi.Name = "InvokeFast" ->
+                    let mi = unbox<MethodInfo> mi
+                    let cnt = 
+                        if mi.Name = "InvokeFast" then mi.GetParameters().Length - 1 else mi.GetParameters().Length
+
+
+                    let newStack = stack |> skip cnt
+                    match newStack with
+                    | Some current :: newStack -> 
+                        match current with
+                        | Lambdas(args, body) ->
+                            let mutable vv = state.vars
+
+                            for ai, a in List.rev (List.indexed args) do
+                                match a with
+                                | [a] -> 
+                                    let l = state.il.DeclareLocal(a.Type)
+                                    state.il.Emit(OpCodes.Stloc, l)
+                                    vv <- Map.add a (Local l) vv
+                                    //overrides <- Map.add ai (Choice1Of2 (Local l)) overrides
+                                | many ->
+                                    let t = FSharpType.MakeTupleType(many |> List.map (fun a -> a.Type) |> List.toArray)
+                                    let lt = state.il.DeclareLocal(t)
+                                    state.il.Emit(OpCodes.Stloc, lt)
+                                    //overrides <- Map.add ai (Choice1Of2 (Local lt)) overrides
+
+                                    for ti, a in Seq.indexed many do
+                                        let get = t.GetProperty(sprintf "Item%d" (ti + 1)).GetMethod
+                                        let l = state.il.DeclareLocal(a.Type)
+                                        state.il.Emit(OpCodes.Ldloc, lt)
+                                        state.il.EmitCall(OpCodes.Call, get, null)
+                                        state.il.Emit(OpCodes.Stloc, l)
+                                        vv <- Map.add a (Local l) vv
+
+                            
+                            compileExpr { state with vars = vv } body
+
+                            let newStack =
+                                if mi.ReturnType <> typeof<System.Void> then None :: newStack
+                                else newStack
+                            run newStack vars rest
+                                
+                        | _ ->
+                            failwith "bad witness"
+                    | _ ->
+                        failwith "bad call"
+                        //state.il.EmitCall(OpCodes.Call, unbox mi, null)
+                        //run newStack vars rest
+
+                | i :: rest ->
+                    let assState : Assembler.State =
+                        { 
+                            Assembler.State.generator = state.il
+                            locals = Dict.toMap dict
+                            labels = Map.empty
+                            stack = []
+                        }
+                    Assembler.assembleTo' assState [i]
+                    run stack vars rest
+
+            let overrides =
+                lambdas |> Array.mapi (fun i l -> i, Choice2Of2 l) |> Map.ofArray
+
+            //for i in def.Body do
+            //    printfn "%A" i
+
+            run [] Map.empty def.Body
+
+
+
+        type DisassemblerState =
+            {
+                args : Map<int, Expr>
+                vars : Map<Local, Var>
+            }
+
+        module DisassemblerState =
+            let ofMethod (meth : MethodBase) (def : MethodDefinition) =
+                
+                let mutable args, i =
+                    if meth.IsStatic then Map.empty, 0
+                    else Map.ofList [0, Var("this", meth.DeclaringType, true) ], 1
+
+                for p in meth.GetParameters() do
+                    let var = Var(p.Name, p.ParameterType, true)
+                    args <- Map.add i var args
+                    i <- i + 1
+
+
+
+                let rec parts (idx : int) (il : list<Instruction>) =
+                    match il with
+                    | [] -> []
+                    | Instruction.Mark l :: rest ->
+                        let parts = parts (idx + 1) rest
+                        (l, idx) :: parts
+                    | _ :: rest ->
+                        parts (idx + 1) rest
+
+                let p = parts 0 def.Body
+                printfn "%A" p
+
+                {
+                    args = args |> Map.map (fun _ -> Expr.Var)
+                    vars = Map.empty
+                }
+
+
+        let disassemble (mi : MethodBase) =
+            let def = Disassembler.disassemble mi
+   
+            let rec toExpr (stack : list<Expr>) (state : DisassemblerState) (i : list<Instruction>) =
+                match i with
+                | [] ->
+                    failwithf "bad end: %A" stack
+                    
+                | Instruction.Tail :: rest
+                | Instruction.Start :: rest ->
+                    toExpr stack state rest
+                    
+                //| Instruction.Leave l :: rest ->
+                //    toExpr stack args vars rest
+                    
+
+                //| Instruction. :: rest ->
+                //    toExpr stack vars rest
+
+                | Instruction.Call mi :: rest ->    
+                    let pars = mi.GetParameters()
+                    let parCount =
+                        if mi.IsStatic then pars.Length
+                        else 1 + pars.Length
+
+                    let a = List.take parCount stack |> List.rev
+                    let s = List.skip parCount stack
+
+                    if mi.IsStatic then
+                        toExpr (Expr.Call(unbox mi, a) :: s) state rest
+                    else
+                        match a with
+                        | self :: a -> toExpr (Expr.Call(self, unbox mi, a) :: s) state rest
+                        | [] -> failwith "bad"
+
+
+                | Instruction.Ret :: _ ->
+                    match stack with
+                    | [e] -> e
+                    | _ -> failwithf "cannot return: %A" stack
+
+                | Instruction.Stloc l :: rest ->
+                    let vars, var, isSet = 
+                        match Map.tryFind l state.vars with
+                        | Some var -> 
+                            state.vars, var, true
+                        | None ->
+                            let v = Var(l.Name, l.Type, true)
+                            Map.add l v state.vars, v, false
+
+                    match stack with
+                    | e :: s ->
+                        if isSet then
+                            Expr.Sequential(Expr.VarSet(var, e), toExpr s { state with vars = vars } rest)
+                        else
+                            Expr.Let(var, e, toExpr s { state with vars = vars } rest)
+                    | [] ->
+                        failwithf "cannot store %A (empty stack)" l
+                            
+                | Instruction.Ldloc l :: rest ->
+                    match Map.tryFind l state.vars with
+                    | Some var ->
+                        toExpr (Expr.Var var :: stack) state rest
+                    | None ->
+                        failwithf "cannot load %A (not bound)" l
+
+                | Instruction.LdConst c :: rest ->
+                    let value = 
+                        match c with
+                        | Constant.Int8 v -> Expr.Value v
+                        | Constant.Int16 v -> Expr.Value v
+                        | Constant.Int32 v -> Expr.Value v
+                        | Constant.Int64 v -> Expr.Value v
+                        | Constant.UInt8 v -> Expr.Value v
+                        | Constant.UInt16 v -> Expr.Value v
+                        | Constant.UInt32 v -> Expr.Value v
+                        | Constant.UInt64 v -> Expr.Value v
+                        | Constant.Float32 v -> Expr.Value v
+                        | Constant.Float64 v -> Expr.Value v
+                        | Constant.NativeInt v -> Expr.Value v
+                        | Constant.UNativeInt v -> Expr.Value v
+                        | Constant.String v -> Expr.Value v
+
+                    toExpr (value :: stack) state rest
+
+                | Instruction.ConditionalJump(cond, target) :: rest ->
+                    failwith ""
+
+                | (Instruction.LdargA i | Instruction.Ldarg i) :: rest ->
+                    match Map.tryFind i state.args with
+                    | Some arg ->
+                        toExpr (arg :: stack) state rest
+                    | None ->
+                        failwithf "cannot load %A (not bound)" i
+
+                | (Instruction.Ldfld f | Instruction.LdfldA f) :: rest ->
+                    match stack with
+                    | a :: stack ->
+                        toExpr (Expr.FieldGet(a, f) :: stack) state rest
+                    | _ ->
+                        failwithf "cannot load field %A (empty stack)" f
+                        
+
+                | Instruction.Add :: rest ->
+                    match stack with 
+                    | b :: a :: stack ->
+                        let mi = (meth <@ (+) @>).GetGenericMethodDefinition().MakeGenericMethod [| a.Type; b.Type; b.Type |]
+                        toExpr (Expr.Call(mi, [a;b]) :: stack) state rest
+                    | _ ->
+                        failwithf "cannot add (insufficient stack: %A)" stack
+
+                | Instruction.And :: rest ->
+                    match stack with 
+                    | b :: a :: stack ->
+                        let mi = (meth <@ (&&&) @>).GetGenericMethodDefinition().MakeGenericMethod [| a.Type |]
+                        toExpr (Expr.Call(mi, [a;b]) :: stack) state rest
+                    | _ ->
+                        failwithf "cannot add (insufficient stack: %A)" stack
+
+                | Instruction.Box t :: rest ->
+                    match stack with
+                    | a :: stack ->
+                        toExpr (Expr.Coerce(a, t) :: stack) state rest
+                    | [] ->
+                        failwith "cannot box (empty stack)"
+                        
+                | i0 :: rest ->
+                    failwithf "bad instruction: %A" i0
+
+            let pars = mi.GetParameters() |> Array.mapi (fun i arg -> i, Var(arg.Name, arg.ParameterType)) |> Map.ofArray
+            let args = pars |> Map.map (fun _ -> Expr.Var)
+
+            let rec wrap (args : list<Var>) (b : Expr) =
+                match args with
+                | [] -> b
+                | a :: rest -> Expr.Lambda(a, wrap rest b)
+
+            let state = DisassemblerState.ofMethod mi def
+            toExpr [] state def.Body |> wrap (Map.toList pars |> List.map snd)
+
+
+
+
+    let compile (e : Expr<'a>) : 'a =
+        let m = DynamicMethod(Guid.NewGuid().ToString(), MethodAttributes.Public ||| MethodAttributes.Static, CallingConventions.Standard, typeof<'a>, [||], Compiler.bMod, true)
+        let il = m.GetILGenerator()
+        Compiler.compileExpr { il = il; vars = Map.empty; currentException = None } e
+        il.Emit(OpCodes.Ret)
+        let f = m.CreateDelegate(typeof<Func<'a>>) |> unbox<Func<'a>>
+
+
+        f.Invoke()
+
+    let inline bla (a : ^a) =
+        (^a : (static member Hans : ^a -> ^b) (a))
+
+    type Blubber(v : int) =
+        member x.Value = v
+        static member Hans(b : Blubber) = b.Value * 10
+
+    [<ReflectedDefinition>]
+    let f (vec : Set<int>) =   
+        let mutable a = bla (Blubber 10) 
+        for i in vec do
+            a <- a + i
+
+        let mutable cnt = 0
+        while a > 0 do
+            a <- a / 2
+            cnt <- cnt + 1
+
+        cnt
+
+    let meth (a : V2i) =
+        a.X + a.Y
+
+    let test() =
+        let def = Compiler.disassemble (Compiler.meth <@ meth @>)
+        printfn "%A" def
+        exit 0
+
+        let expr = Expr.TryGetReflectedDefinition (Compiler.meth <@ f @>) |> Option.get |> Expr.Cast<_ -> _>
+        let test = compile expr
+      
+
+        let meth = test.GetType().GetMethod("Invoke")
+
+        //for i in Aardvark.Base.IL.Disassembler.disassemble(meth).Body do
+        //    printfn "%A" i
+
+        //printfn "%A <-> %A" (test (V2i(4,4))) (f (V2i(4,4)))
+        //printfn "%A <-> %A" (test (V2i(11,11))) (f (V2i(11,11)))
+
+
+        let input = Set.ofList [1;2;3;47]
+
+        try test input |> printfn "%d"
+        with e -> printfn "%A" e
+
+        try f input |> printfn "%d"
+        with e -> printfn "%A" e
+            
+        let iter = 10000000
+        for i in 1 .. 5 do
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            let mutable v = 0
+            for i in 1 .. iter do
+                v <- test input
+            sw.Stop()
+            printfn "compiled: %A" (sw.MicroTime / iter)
+        
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            let mutable v = 0
+            for i in 1 .. iter do
+                v <- f input
+            sw.Stop()
+            printfn "native:   %A" (sw.MicroTime / iter)
+
+
+    type Model =
+        {
+            a : int
+            b : string
+        }
+
+    type aval<'a> = interface end
+    type alist<'a> = interface end
+
+    module AVal =
+        let map (mapping : 'a -> 'b) (v : aval<'a>) : aval<'b> =
+            failwith ""
+        let map2 (mapping : 'a -> 'b -> 'c) (v : aval<'a>) (v1 : aval<'b>) : aval<'c> =
+            failwith ""
+        let bind (mapping : 'a -> aval<'b>) (v : aval<'a>) : aval<'b> =
+            failwith ""
+
+    type Dom = 
+        static member Text (str : string) : Dom = failwith ""
+        static member Text (str : aval<string>) : Dom = failwith ""
+        
+        static member Div (str : list<Dom>) : Dom = failwith ""
+        static member Div (str : alist<Dom>) : Dom = failwith ""
+
+
+        static member Adaptive (a : aval<#seq<Dom>>) : seq<Dom> = failwith ""
+        static member Adaptive (a : aval<Dom>) : Dom = failwith ""
+
+    type SequenceBuilder() =
+      class
+            member b.Zero() = Seq.empty
+            member b.YieldFrom(x) = x
+            member b.Yield(x) = Seq.singleton x
+            member b.Combine(x,y) = Seq.append x y
+            member b.Compose(p1,rest) = Seq.collect rest p1 
+            member b.Using(rf,rest) = Microsoft.FSharp.Core.CompilerServices.RuntimeHelpers.EnumerateUsing rf rest
+            member x.Delay f = Seq.delay f
+      end
+    let hans (a : aval<int>) (m : Model) =
+        let seq = SequenceBuilder()
+        seq.Delay (fun () ->
+            seq.Combine (
+                (
+                    Dom.Adaptive (
+                        a |> AVal.map (fun a ->
+                            if a < 10 then
+                                seq.Combine(
+                                    seq.Yield(Dom.Text "not so much"),
+                                    seq.Delay (fun () -> seq.Yield(Dom.Text "hans"))
+                                )
+                            else 
+                                seq.Zero()
+                        )
+                    )
+                ),
+                seq.Combine(
+                    seq.Yield(Dom.Text (sprintf "%d %s things" m.a m.b)),
+                    seq.Delay (fun () -> 
+                        seq.Yield (
+                            Dom.Div [
+                                Dom.Text (m.b + " hans")
+                            ]
+                        )
+                    )
+                )
+            )
+        )
+
+    let view (m : Model) =
+        Dom.Div [
+            if m.a < 10 then
+                Dom.Text "not so much"
+                Dom.Text "hans"
+            Dom.Text (sprintf "%d %s things" m.a m.b)
+            Dom.Div [
+                Dom.Text (m.b + " hans")
+            ]
+        ]
+
+    let view' (a : aval<int>) (b : aval<string>) =
+        Dom.Div [
+            yield!
+                Dom.Adaptive (
+                    a |> AVal.map (fun a -> 
+                        [
+                            if a < 10 then
+                                yield Dom.Text "not so much"
+                                yield Dom.Text "hans"
+                        ]
+                    )
+                )
+            yield Dom.Text (b |> AVal.map (fun b -> (a |> AVal.map (fun a -> sprintf "%d %s things" a b))) |> AVal.bind id)
+            yield Dom.Div [
+                Dom.Text (b |> AVal.map (fun b -> b + " hans"))
+            ]
+        ]
+
+
 module NativePtr = 
     let inline pinString (str : string) (cont : nativeint -> 'a) =
         let length = 1 + System.Text.Encoding.UTF8.GetByteCount str
@@ -633,8 +2002,446 @@ let test () =
     for a in ptrs do
         printfn "%A" (NativePtr.read a)
 
+
+let rec lcl (ai : int) (a : list<'a>) (bi : int) (b : list<'a>) =
+    match a with
+    | a0 :: a ->
+        match b with
+        | b0 :: b ->
+            if a0 = b0 then
+                struct(ai, bi, a0) :: lcl (ai + 1) a (bi + 1) b
+            else
+                let rec explore (even : bool) (aii : int) (aa : list<'a>) (bii : int) (bb : list<'a>) =
+                    if even then
+                        match aa with
+                        | va :: a ->
+                            if va = b0 then ValueSome(struct(aii, bi, b0, a, b))
+                            else explore false (aii + 1) a bii bb
+                        | [] ->
+                            let rec findInB (bii : int) (b : list<'a>) =
+                                match b with
+                                | vb :: b ->
+                                    if vb = a0 then ValueSome(struct(ai, bii, a0, a, b))
+                                    else findInB (bii + 1) b
+                                | [] ->
+                                    ValueNone
+
+                            findInB bii bb
+                    else   
+                        match bb with
+                        | vb :: b ->
+                            if vb = a0 then ValueSome(struct(bii, ai, a0, a, b))
+                            else explore true (bii + 1) b aii aa
+                        | [] ->
+                            let rec findInA (aii : int) (a : list<'a>) =
+                                match a with
+                                | va :: a ->
+                                    if va = b0 then ValueSome(struct(bi, aii, b0, a, b))
+                                    else findInA (aii + 1) a
+                                | [] ->
+                                    ValueNone
+
+                            findInA aii aa
+
+                        
+                match explore true (ai+1) a (bi+1) b with
+                | ValueSome (struct(ai, bi, v, ra, rb)) ->
+                    struct(ai, bi, v) :: lcl (ai+1) ra (bi+1) rb
+                | ValueNone ->
+                    []
+        | [] ->
+            []
+    | [] ->
+        []
+
+let lcs (a : seq<'a>) (b : seq<'a>) =
+        
+    let mutable ai = 0
+    let mutable bi = 0
+
+    use ea = a.GetEnumerator()
+    use eb = b.GetEnumerator()
+
+    let res = ListBuilder()
+
+
+    while ea.MoveNext() && eb.MoveNext() do
+        let va = ea.Current //a.[ai]
+        let vb = eb.Current //b.[bi]
+
+        if va = vb then
+            res.Append struct(ai, bi, va)
+            ai <- ai + 1
+            bi <- bi + 1
+        else
+            let rec find (even : bool) (ai : int) (aii : int) (bi : int) (bii : int) =
+                if even then
+                    if ea.MoveNext() then
+                        if ea.Current = vb then
+                            ValueSome(struct(aii, bi, vb))
+                        else
+                            find false ai aii bi (bii + 1)
+                    else
+                        let rec findInB (bii : int) =
+                            if eb.MoveNext() then
+                                if va = eb.Current then ValueSome(struct(ai, bii, va))
+                                else findInB (bii + 1)
+                            else
+                                ValueNone
+                        findInB (bii + 1)
+                else    
+                    if eb.MoveNext() then
+                        if eb.Current = va then
+                            ValueSome(struct(ai, bii, va))
+                        else
+                            find true ai (aii + 1) bi bii
+                    else
+                        let rec findInA (aii : int) =
+                            if ea.MoveNext() then
+                                if vb = ea.Current then ValueSome(struct(aii, bi, va))
+                                else findInA (aii + 1)
+                            else
+                                ValueNone
+                        findInA (aii + 1)
+                 
+
+            match find true ai (ai + 1) bi bi with
+            | ValueSome (struct(aii, bii, value)) ->
+                res.Append struct(aii, bii, value)
+                ai <- aii + 1
+                bi <- bii + 1
+            | ValueNone ->  
+                ()
+                
+
+    res.ToList()
+
+type Delta<'a> =
+    | Insert of int * 'a
+    | Remove of int * 'a
+
+let diff (a : list<'a>) (b : list<'a>) =
+    let delta = ListBuilder()
+
+    let lcs = lcl 0 a 0 b
+
+    use ea = (a :> seq<_>).GetEnumerator()
+    use eb = (b :> seq<_>).GetEnumerator()
+
+    let mutable ai = 0
+    let mutable bi = 0
+    let mutable offset = 0
+    for struct(aii, bii, _) in lcs do
+        // skip the equal element
+        while ai < aii do
+            ea.MoveNext() |> ignore
+            delta.Append(Remove(ai + offset, ea.Current))
+            ai <- ai + 1
+            offset <- offset - 1
+
+        while bi < bii do
+            eb.MoveNext() |> ignore
+            delta.Append(Insert(ai + offset, eb.Current))
+            bi <- bi + 1
+            offset <- offset + 1
+
+        ea.MoveNext() |> ignore
+        eb.MoveNext() |> ignore
+        ai <- ai + 1
+        bi <- bi + 1
+
+    while ea.MoveNext() do
+        ai <- ai + 1
+        delta.Append(Remove(ai + offset, ea.Current))
+        offset <- offset - 1
+        
+    while eb.MoveNext() do
+        delta.Append(Insert(ai + offset-1, eb.Current))
+        offset <- offset + 1
+
+    delta.ToList()
+
+
+let rec applyDelta (deltas : list<Delta<'a>>) (arr : 'a[]) =
+    match deltas with
+    | [] ->
+        arr
+    | Insert(i, v) :: deltas ->
+        let arr1 = 
+            Array.concat [
+                Array.take i arr 
+                [|v|]
+                Array.skip i arr
+            ]
+        applyDelta deltas arr1
+
+    | Remove (0,_) :: deltas -> 
+        applyDelta deltas (Array.skip 1 arr)
+        
+    | Remove (c,_) :: deltas when c = arr.Length - 1 -> 
+        applyDelta deltas (Array.take c arr)
+
+    | Remove(i,_) :: deltas ->
+        let arr1 = 
+            Array.concat [
+                Array.take i arr 
+                Array.skip (i+1) arr
+            ]
+        applyDelta deltas arr1
+
+
+module IndexListExtensions =
+    open FSharp.Data.Adaptive
+
+    [<AutoOpen>]
+    module private Helpers =
+        //let(|Cons|Nil|) (l : IndexList<'a>) =
+        //    let id = l.MinIndex
+        //    match l.TryRemove id with
+        //    | Some (head, tail) ->
+        //        Cons(id, head, tail)
+        //    | None ->
+        //        Nil
+
+        //let inline (|Empty|FoundInLeft|FoundInRight|) (r : ExploreResult<'a>) =
+        //    match r.Tag with
+        //    | 1 -> FoundInLeft(r.Index, unbox<IndexList<'a>> r.Rest, unbox<list<Index>> r.Delta)
+        //    | 2 -> FoundInRight(unbox<list<'a>> r.Rest, unbox<list<'a>> r.Delta)
+        //    | _ -> Empty
+
+        type ExploreResult<'a> =
+            struct
+                val mutable public Tag : int
+                val mutable public Index : Index
+                val mutable public Rest : obj
+                val mutable public Delta : obj
+
+                static member inline Empty =
+                    Unchecked.defaultof<ExploreResult<'a>>
+
+                static member inline FoundInLeft(index : Index, rest : IndexList<'a>, removes : list<Index>) =
+                    let mutable res = Unchecked.defaultof<ExploreResult<'a>>
+                    res.Tag <- 1
+                    res.Index <- index
+                    res.Rest <- rest
+                    res.Delta <- removes
+                    res
+
+                static member inline FoundInRight(rest : list<'a>, adds : list<'a>) =
+                    let mutable res = Unchecked.defaultof<ExploreResult<'a>>
+                    res.Tag <- 2
+                    res.Rest <- rest
+                    res.Delta <- adds
+                    res
+
+            end
+
+
+        let rec explore (equals : OptimizedClosures.FSharpFunc<'a, 'a, bool>) (l0 : 'a) (r0 : 'a) (left : bool) (li : IndexList<'a>) (rems : ListBuilder<Index>) (ri : list<'a>) (adds : ListBuilder<'a>) =
+            if li.IsEmpty && List.isEmpty ri then
+                ExploreResult.Empty
+
+            elif left then  
+                if li.IsEmpty then
+                //| Nil ->
+                    explore equals l0 r0 (not left) li rems ri adds
+                else
+                    let ili0 = li.MinIndex
+                    let (li0, li1) = li.TryRemove ili0 |> Option.get
+                //| Cons(ili0, li0, li1) ->
+                    if equals.Invoke(li0, r0) then 
+                        ExploreResult.FoundInLeft(ili0, li1, rems.ToList())
+                    else
+                        rems.Append ili0
+                        explore equals l0 r0 (not left) li1 rems ri adds
+            else
+                match ri with
+                | [] -> 
+                    explore equals l0 r0 (not left) li rems ri adds
+                | ri0 :: ri1 ->
+                    if equals.Invoke(ri0, l0) then 
+                        ExploreResult.FoundInRight(ri1, adds.ToList())
+                    else
+                        adds.Append ri0
+                        explore equals l0 r0 (not left) li rems ri1 adds
+                     
+        let rec computeDeltaAux (equals : OptimizedClosures.FSharpFunc<'a, 'a, bool>) (lastIndex : Index) (delta : IndexListDelta<'a>) (l : IndexList<'a>) (r : list<'a>) =
+            if l.IsEmpty then //| Nil ->
+                // add the rest
+                let mutable delta = delta
+                let mutable lastIndex = lastIndex
+                for n in r do
+                    let id = Index.after lastIndex
+                    lastIndex <- id
+                    delta <- IndexListDelta.add id (Set n) delta
+                delta
+            else //| Cons(il0, l0, l1) ->
+                let il0 = l.MinIndex
+                let (l0, l1) = l.TryRemove il0 |> Option.get
+                match r with
+                | r0 :: r1 ->
+                    if equals.Invoke(l0, r0) then
+                        computeDeltaAux equals il0 delta l1 r1
+                    else
+    
+                        let res = explore equals l0 r0 true l1 (ListBuilder()) r1 (ListBuilder())
+                        match res.Tag with
+                        | 1 -> // FoundInLeft(index, rest, rems) ->
+                            let index = res.Index
+                            let rest = res.Rest :?> IndexList<'a>
+                            let rems = res.Delta :?> list<Index>
+
+                            let mutable delta = delta
+                            // r0 was found in l1
+                            delta <- IndexListDelta.add il0 Remove delta
+                            for r in rems do
+                                delta <- IndexListDelta.add r Remove delta
+
+                            computeDeltaAux equals index delta rest r1 
+                        | 2 -> //FoundInRight(rest, adds) -> 
+                            let rest = res.Rest :?> list<'a>
+                            let adds = res.Delta :?> list<'a>
+                            // l0 was found in r1
+                            let mutable delta = delta
+                            let mutable lastIndex = lastIndex
+
+                            let id = Index.between lastIndex il0
+                            lastIndex <- id
+                            delta <- IndexListDelta.add id (Set r0) delta
+                            for a in adds do
+                                let id = Index.between lastIndex il0
+                                lastIndex <- id
+                                delta <- IndexListDelta.add id (Set a) delta
+                            
+                            computeDeltaAux equals il0 delta l1 rest
+
+                        | _ -> // Empty ->
+                            let dn = IndexListDelta.add il0 (Set r0) delta
+                            computeDeltaAux equals il0 dn l1 r1
+
+                | [] ->
+                    // remove the rest
+                    let mutable delta = delta
+                    for (id, r) in IndexList.toSeqIndexed l do
+                        delta <- IndexListDelta.add id Remove delta
+                    delta
+                    
+        
+
+    let computeDelta (equals : 'a -> 'a -> bool) (l : IndexList<'a>) (r : list<'a>) : IndexListDelta<'a> =
+        let equals = OptimizedClosures.FSharpFunc<'a, 'a, bool>.Adapt(equals)
+        computeDeltaAux equals Index.zero IndexListDelta.empty l r
+
+module ComputeDeltaTests =
+
+    open FSharp.Data.Adaptive
+    
+    let bla() =
+        let a = IndexList.ofList [1;2;3;4;2;7]
+        let b = [8;9;10]
+
+        let d = IndexListExtensions.computeDelta Unchecked.equals a b
+
+        let print (d : IndexListDelta<'a>) =
+            let inline printDelta (i : Index, op : ElementOperation<'a>) =
+                let stri = (sprintf "%A" i).TrimEnd('0')
+
+                match op with
+                | Remove -> sprintf "Remove(%s)" stri
+                | Set v -> sprintf "Set(%s, %A)" stri v
+            let str = d |> IndexListDelta.toSeq |> Seq.map printDelta |> String.concat "; " |> sprintf "IndexListDelta [%s]"
+            printfn "%s" str
+
+        print d
+
+
+
+
+    let validate() =  
+        let iter = 50000
+        Log.startTimed "computeDelta"
+        let rand = RandomSystem()
+        let mutable failed = []
+        let mutable failedCount = 0
+        let mutable passed = 0
+        for i in 1 .. iter do
+            let a = List.init (rand.UniformInt 1000) (fun _ -> rand.UniformInt 1000)
+            let b = List.init (rand.UniformInt 1000) (fun _ -> rand.UniformInt 1000)
+
+            let list = IndexList.ofList a
+            let delta = IndexListExtensions.computeDelta Unchecked.equals list b
+            let (nl, _) = IndexList.applyDelta list delta
+
+            let n = IndexList.toList nl
+            if b = n then
+                passed <- passed + 1
+            else
+                failed <- (a,b) :: failed
+                failedCount <- failedCount + 1
+            Report.Progress(float i / float iter)
+
+        Report.Progress 1.0
+
+        Log.line "%d tests passed" passed
+        if failedCount > 0 then
+            Log.line "%d tests failed" failedCount
+            for i, (a, b) in Seq.indexed failed do     
+                let list = IndexList.ofList a
+
+                Log.start "error %d" i
+
+                let chunkSize = 8
+                Log.start "left"
+                for chunk in IndexList.toSeqIndexed list |> Seq.chunkBySize chunkSize do
+                    let str = chunk |> Seq.map (fun (i,a) -> sprintf "%A: %A" i a) |> String.concat "; "
+                    Log.line "%s" str
+                Log.stop()
+
+                Log.start "right"
+                for chunk in Seq.chunkBySize chunkSize b do
+                    let str = chunk |> Seq.map (fun a -> sprintf "%A" a) |> String.concat "; "
+                    Log.line "%s" str
+                Log.stop()
+
+                let delta = IndexListExtensions.computeDelta Unchecked.equals list b
+                Log.start "delta"
+                for chunk in Seq.chunkBySize chunkSize (IndexListDelta.toSeq delta) do
+                    let str = chunk |> Seq.map (fun (i,a) -> sprintf "%A: %A" i a) |> String.concat "; "
+                    Log.line "%s" str
+                Log.stop()
+
+                let (res, _) = IndexList.applyDelta list delta
+                Log.start "result"
+                for chunk in Seq.chunkBySize chunkSize (IndexList.toSeq res) do
+                    let str = chunk |> Seq.map (fun a -> sprintf "%A" a) |> String.concat "; "
+                    Log.line "%s" str
+                Log.stop()
+
+                Log.stop()
+
+        Log.stop()
+        
+
+
+open FSharp.Data.Adaptive
+
 [<EntryPoint; STAThread>]
-let main argv = 
+let main argv =     
+    ComputeDeltaTests.bla()
+    exit 0
+
+
+    let a = [1;2;3;4;7]
+    let b = [2;4;5;6;7]
+    let diff = diff a b
+    printfn "%A" diff
+
+    let b1 = applyDelta diff (List.toArray a)
+    printfn "%A" b1
+
+
+    exit 0
+
     Aardvark.Init()
  
     let glfw = Glfw.GetApi()
@@ -664,7 +2471,16 @@ let main argv =
         printfn "%s" a.Name
     | _ -> 
         let dev = a.CreateDevice()
+        
+        Sg.Hans.test dev
+        //run dev
+        use buffy = dev.CreateBuffer<int>(1024, BufferUsage.CopySrc ||| BufferUsage.CopyDst)
 
+
+        buffy.Upload (Array.init 1024 id)
+        buffy.Download() |> printfn "%A"
+        exit 0
+        
         //let sw = System.Diagnostics.Stopwatch.StartNew()
         //for i in 1 .. 100 do
         //    let a = dev.CreateBuffer { Label = "asdsad"; Usage = BufferUsage.Vertex ||| BufferUsage.CopyDst; Size = 1024UL; MappedAtCreation = false }

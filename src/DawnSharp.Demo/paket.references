@@ -1,4 +1,7 @@
 FSharp.Core
 GLSLangSharp
 Aardvark.Base
+Aardvark.Base.FSharp
 Silk.NET.GLFW
+FShade
+FSharp.Data.Adaptive

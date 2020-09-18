@@ -895,7 +895,7 @@ module rec Ast =
                     | [] ->
                         let all = args |> List.map (fun f -> sprintf "_%s" f.name) |> String.concat ", "
                         String.concat "\r\n"[
-                            sprintf "_%sGC.Free()" name
+                            sprintf "if _%sGC.IsAllocated then _%sGC.Free()" name name
                             sprintf "%s.Invoke(%s)" name all
                         ]
                     | a0 :: rest ->
@@ -908,7 +908,7 @@ module rec Ast =
                     sprintf "let _%sFunction %s = " name argDef
                     indent (readArgs args)
                     sprintf "let _%sDel = WGPU%s(_%sFunction)" name (frontendName typ) name
-                    sprintf "let _%sGC = System.Runtime.InteropServices.GCHandle.Alloc(_%sDel)" name (access name)
+                    sprintf "_%sGC <- System.Runtime.InteropServices.GCHandle.Alloc(_%sDel)" name (access name)
                     sprintf "let _%s = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_%sDel)" name (access name)
                     inner
                 ]
@@ -1193,22 +1193,35 @@ module rec Ast =
                         yield sprintf "handle : %s" meNative
                     ]
 
-                let ctorArgUse =
+                let ctorArgsWithRefCount = 
+                    String.concat ", " [
+                        if name <> "Device" then yield "device : Device"
+                        yield sprintf "handle : %s" meNative
+                        yield sprintf "refCount : ref<int>"
+                    ]
+
+                    
+
+                let ctorArgsUseWithRefCount = 
                     String.concat ", " [
                         if name <> "Device" then yield "device"
                         yield sprintf "handle"
+                        yield sprintf "refCount"
                     ]
 
                 printfn "[<AllowNullLiteral>]"
-                printfn "type %s(%s) = " name ctorArgs
+                printfn "type %s(%s) = " name ctorArgsWithRefCount
                 printfn "    let mutable isDisposed = false"
                 if name <> "Device" then
                     printfn "    member x.Device = device"
+
+                printfn "    member x.ReferenceCount = !refCount"
                 printfn "    member x.Handle = handle"
                 printfn "    member x.IsDisposed = isDisposed"
 
                 printfn "    member private x.Dispose(disposing : bool) ="
                 printfn "        if not isDisposed then "
+                printfn "            refCount := !refCount - 1"
                 printfn "            isDisposed <- true"
                 printfn "            if disposing then System.GC.SuppressFinalize x"
                 printfn "            DawnRaw.wgpu%sRelease(handle)" name
@@ -1217,10 +1230,20 @@ module rec Ast =
                 printfn "    override x.Finalize() = x.Dispose(false)"
                 printfn "    member x.Clone() = "
                 printfn "        if isDisposed then raise <| System.ObjectDisposedException(\"%s\")" name
+                printfn "        refCount := !refCount + 1"
                 printfn "        DawnRaw.wgpu%sReference(handle)" name
-                printfn "        new %s(%s)" name ctorArgUse
+                printfn "        new %s(%s)" name ctorArgsUseWithRefCount
                 printfn "    interface System.IDisposable with"
                 printfn "        member x.Dispose() = x.Dispose()"
+                
+                let ctorArgUse =
+                    String.concat ", " [
+                        if name <> "Device" then yield "device"
+                        yield sprintf "handle"
+                        yield "ref 1"
+                    ]
+                printfn "    new(%s) = new %s(%s)" ctorArgs name ctorArgUse
+
                 for meth in meths do
                     if meth.name <> "Reference" && meth.name <> "Release" then
                         let overloads (meth : Method) =

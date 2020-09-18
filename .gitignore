@@ -16,3 +16,4 @@ bin/Debug
 x64/
 /src/DawnNative/*.user
 /src/DawnNative/Release/
+/src/DawnSharp.Demo/.ionide/symbolCache.db

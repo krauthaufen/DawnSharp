@@ -412,7 +412,7 @@ type TextureFormat =
 | BC5RGUnorm = 48
 | BC5RGSnorm = 49
 | BC6HRGBUfloat = 50
-| BC6HRGBSfloat = 51
+| BC6HRGBFloat = 51
 | BC7RGBAUnorm = 52
 | BC7RGBAUnormSrgb = 53
 [<Flags>]
@@ -3086,13 +3086,15 @@ type RenderPipelineDescriptor =
 
 
 [<AllowNullLiteral>]
-type BindGroup(device : Device, handle : BindGroupHandle) = 
+type BindGroup(device : Device, handle : BindGroupHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuBindGroupRelease(handle)
@@ -3100,18 +3102,22 @@ type BindGroup(device : Device, handle : BindGroupHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("BindGroup")
+        refCount := !refCount + 1
         DawnRaw.wgpuBindGroupReference(handle)
-        new BindGroup(device, handle)
+        new BindGroup(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : BindGroupHandle) = new BindGroup(device, handle, ref 1)
 [<AllowNullLiteral>]
-type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle) = 
+type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuBindGroupLayoutRelease(handle)
@@ -3119,18 +3125,22 @@ type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("BindGroupLayout")
+        refCount := !refCount + 1
         DawnRaw.wgpuBindGroupLayoutReference(handle)
-        new BindGroupLayout(device, handle)
+        new BindGroupLayout(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : BindGroupLayoutHandle) = new BindGroupLayout(device, handle, ref 1)
 [<AllowNullLiteral>]
-type CommandBuffer(device : Device, handle : CommandBufferHandle) = 
+type CommandBuffer(device : Device, handle : CommandBufferHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuCommandBufferRelease(handle)
@@ -3138,18 +3148,22 @@ type CommandBuffer(device : Device, handle : CommandBufferHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("CommandBuffer")
+        refCount := !refCount + 1
         DawnRaw.wgpuCommandBufferReference(handle)
-        new CommandBuffer(device, handle)
+        new CommandBuffer(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : CommandBufferHandle) = new CommandBuffer(device, handle, ref 1)
 [<AllowNullLiteral>]
-type PipelineLayout(device : Device, handle : PipelineLayoutHandle) = 
+type PipelineLayout(device : Device, handle : PipelineLayoutHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuPipelineLayoutRelease(handle)
@@ -3157,18 +3171,22 @@ type PipelineLayout(device : Device, handle : PipelineLayoutHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("PipelineLayout")
+        refCount := !refCount + 1
         DawnRaw.wgpuPipelineLayoutReference(handle)
-        new PipelineLayout(device, handle)
+        new PipelineLayout(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : PipelineLayoutHandle) = new PipelineLayout(device, handle, ref 1)
 [<AllowNullLiteral>]
-type QuerySet(device : Device, handle : QuerySetHandle) = 
+type QuerySet(device : Device, handle : QuerySetHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuQuerySetRelease(handle)
@@ -3176,20 +3194,24 @@ type QuerySet(device : Device, handle : QuerySetHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("QuerySet")
+        refCount := !refCount + 1
         DawnRaw.wgpuQuerySetReference(handle)
-        new QuerySet(device, handle)
+        new QuerySet(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : QuerySetHandle) = new QuerySet(device, handle, ref 1)
     member inline x.Destroy() : unit = 
         DawnRaw.wgpuQuerySetDestroy(x.Handle)
 [<AllowNullLiteral>]
-type RenderBundle(device : Device, handle : RenderBundleHandle) = 
+type RenderBundle(device : Device, handle : RenderBundleHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderBundleRelease(handle)
@@ -3197,18 +3219,22 @@ type RenderBundle(device : Device, handle : RenderBundleHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("RenderBundle")
+        refCount := !refCount + 1
         DawnRaw.wgpuRenderBundleReference(handle)
-        new RenderBundle(device, handle)
+        new RenderBundle(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : RenderBundleHandle) = new RenderBundle(device, handle, ref 1)
 [<AllowNullLiteral>]
-type Sampler(device : Device, handle : SamplerHandle) = 
+type Sampler(device : Device, handle : SamplerHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuSamplerRelease(handle)
@@ -3216,18 +3242,22 @@ type Sampler(device : Device, handle : SamplerHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Sampler")
+        refCount := !refCount + 1
         DawnRaw.wgpuSamplerReference(handle)
-        new Sampler(device, handle)
+        new Sampler(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : SamplerHandle) = new Sampler(device, handle, ref 1)
 [<AllowNullLiteral>]
-type ShaderModule(device : Device, handle : ShaderModuleHandle) = 
+type ShaderModule(device : Device, handle : ShaderModuleHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuShaderModuleRelease(handle)
@@ -3235,18 +3265,22 @@ type ShaderModule(device : Device, handle : ShaderModuleHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("ShaderModule")
+        refCount := !refCount + 1
         DawnRaw.wgpuShaderModuleReference(handle)
-        new ShaderModule(device, handle)
+        new ShaderModule(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : ShaderModuleHandle) = new ShaderModule(device, handle, ref 1)
 [<AllowNullLiteral>]
-type Surface(device : Device, handle : SurfaceHandle) = 
+type Surface(device : Device, handle : SurfaceHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuSurfaceRelease(handle)
@@ -3254,18 +3288,22 @@ type Surface(device : Device, handle : SurfaceHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Surface")
+        refCount := !refCount + 1
         DawnRaw.wgpuSurfaceReference(handle)
-        new Surface(device, handle)
+        new Surface(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : SurfaceHandle) = new Surface(device, handle, ref 1)
 [<AllowNullLiteral>]
-type TextureView(device : Device, handle : TextureViewHandle) = 
+type TextureView(device : Device, handle : TextureViewHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuTextureViewRelease(handle)
@@ -3273,18 +3311,22 @@ type TextureView(device : Device, handle : TextureViewHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("TextureView")
+        refCount := !refCount + 1
         DawnRaw.wgpuTextureViewReference(handle)
-        new TextureView(device, handle)
+        new TextureView(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : TextureViewHandle) = new TextureView(device, handle, ref 1)
 [<AllowNullLiteral>]
-type ComputePipeline(device : Device, handle : ComputePipelineHandle) = 
+type ComputePipeline(device : Device, handle : ComputePipelineHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuComputePipelineRelease(handle)
@@ -3292,21 +3334,25 @@ type ComputePipeline(device : Device, handle : ComputePipelineHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("ComputePipeline")
+        refCount := !refCount + 1
         DawnRaw.wgpuComputePipelineReference(handle)
-        new ComputePipeline(device, handle)
+        new ComputePipeline(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : ComputePipelineHandle) = new ComputePipeline(device, handle, ref 1)
     member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
         new BindGroupLayout(x.Device, DawnRaw.wgpuComputePipelineGetBindGroupLayout(x.Handle, _GroupIndex))
 [<AllowNullLiteral>]
-type Instance(device : Device, handle : InstanceHandle) = 
+type Instance(device : Device, handle : InstanceHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuInstanceRelease(handle)
@@ -3314,10 +3360,12 @@ type Instance(device : Device, handle : InstanceHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Instance")
+        refCount := !refCount + 1
         DawnRaw.wgpuInstanceReference(handle)
-        new Instance(device, handle)
+        new Instance(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : InstanceHandle) = new Instance(device, handle, ref 1)
     member inline x.CreateSurface() : Surface = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUSurfaceDescriptor>
@@ -3355,13 +3403,15 @@ type Instance(device : Device, handle : InstanceHandle) =
         else
             _LabelCont 0n
 [<AllowNullLiteral>]
-type RenderPipeline(device : Device, handle : RenderPipelineHandle) = 
+type RenderPipeline(device : Device, handle : RenderPipelineHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderPipelineRelease(handle)
@@ -3369,21 +3419,25 @@ type RenderPipeline(device : Device, handle : RenderPipelineHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("RenderPipeline")
+        refCount := !refCount + 1
         DawnRaw.wgpuRenderPipelineReference(handle)
-        new RenderPipeline(device, handle)
+        new RenderPipeline(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : RenderPipelineHandle) = new RenderPipeline(device, handle, ref 1)
     member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
         new BindGroupLayout(x.Device, DawnRaw.wgpuRenderPipelineGetBindGroupLayout(x.Handle, _GroupIndex))
 [<AllowNullLiteral>]
-type SwapChain(device : Device, handle : SwapChainHandle) = 
+type SwapChain(device : Device, handle : SwapChainHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuSwapChainRelease(handle)
@@ -3391,10 +3445,12 @@ type SwapChain(device : Device, handle : SwapChainHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("SwapChain")
+        refCount := !refCount + 1
         DawnRaw.wgpuSwapChainReference(handle)
-        new SwapChain(device, handle)
+        new SwapChain(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : SwapChainHandle) = new SwapChain(device, handle, ref 1)
     member inline x.Configure(Format : TextureFormat, AllowedUsage : TextureUsage, Width : int, Height : int) : unit = 
         let _Format = Format
         let _AllowedUsage = AllowedUsage
@@ -3406,13 +3462,15 @@ type SwapChain(device : Device, handle : SwapChainHandle) =
     member inline x.Present() : unit = 
         DawnRaw.wgpuSwapChainPresent(x.Handle)
 [<AllowNullLiteral>]
-type Buffer(device : Device, handle : BufferHandle) = 
+type Buffer(device : Device, handle : BufferHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuBufferRelease(handle)
@@ -3420,10 +3478,12 @@ type Buffer(device : Device, handle : BufferHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Buffer")
+        refCount := !refCount + 1
         DawnRaw.wgpuBufferReference(handle)
-        new Buffer(device, handle)
+        new Buffer(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : BufferHandle) = new Buffer(device, handle, ref 1)
     member inline x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback) : unit = 
         let _Mode = Mode
         let _Offset = Offset
@@ -3432,10 +3492,10 @@ type Buffer(device : Device, handle : BufferHandle) =
         let _CallbackFunction (Status : BufferMapAsyncStatus) (Userdata : nativeint) = 
             let _Status = Status
             let _Userdata = Userdata
-            _CallbackGC.Free()
+            if _CallbackGC.IsAllocated then _CallbackGC.Free()
             Callback.Invoke(_Status, _Userdata)
         let _CallbackDel = WGPUBufferMapCallback(_CallbackFunction)
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuBufferMapAsync(x.Handle, _Mode, _Offset, _Size, _Callback, _Userdata)
@@ -3447,10 +3507,10 @@ type Buffer(device : Device, handle : BufferHandle) =
         let _CallbackFunction (Status : BufferMapAsyncStatus) (Userdata : nativeint) = 
             let _Status = Status
             let _Userdata = Userdata
-            _CallbackGC.Free()
+            if _CallbackGC.IsAllocated then _CallbackGC.Free()
             Callback.Invoke(_Status, _Userdata)
         let _CallbackDel = WGPUBufferMapCallback(_CallbackFunction)
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
         DawnRaw.wgpuBufferMapAsync(x.Handle, _Mode, _Offset, _Size, _Callback, _Userdata)
@@ -3483,13 +3543,15 @@ type Buffer(device : Device, handle : BufferHandle) =
     member inline x.Destroy() : unit = 
         DawnRaw.wgpuBufferDestroy(x.Handle)
 [<AllowNullLiteral>]
-type Fence(device : Device, handle : FenceHandle) = 
+type Fence(device : Device, handle : FenceHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuFenceRelease(handle)
@@ -3497,10 +3559,12 @@ type Fence(device : Device, handle : FenceHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Fence")
+        refCount := !refCount + 1
         DawnRaw.wgpuFenceReference(handle)
-        new Fence(device, handle)
+        new Fence(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : FenceHandle) = new Fence(device, handle, ref 1)
     member inline x.GetCompletedValue() : uint64 = 
         DawnRaw.wgpuFenceGetCompletedValue(x.Handle)
     member inline x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback) : unit = 
@@ -3509,10 +3573,10 @@ type Fence(device : Device, handle : FenceHandle) =
         let _CallbackFunction (Status : FenceCompletionStatus) (Userdata : nativeint) = 
             let _Status = Status
             let _Userdata = Userdata
-            _CallbackGC.Free()
+            if _CallbackGC.IsAllocated then _CallbackGC.Free()
             Callback.Invoke(_Status, _Userdata)
         let _CallbackDel = WGPUFenceOnCompletionCallback(_CallbackFunction)
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuFenceOnCompletion(x.Handle, _Value, _Callback, _Userdata)
@@ -3522,21 +3586,23 @@ type Fence(device : Device, handle : FenceHandle) =
         let _CallbackFunction (Status : FenceCompletionStatus) (Userdata : nativeint) = 
             let _Status = Status
             let _Userdata = Userdata
-            _CallbackGC.Free()
+            if _CallbackGC.IsAllocated then _CallbackGC.Free()
             Callback.Invoke(_Status, _Userdata)
         let _CallbackDel = WGPUFenceOnCompletionCallback(_CallbackFunction)
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
         DawnRaw.wgpuFenceOnCompletion(x.Handle, _Value, _Callback, _Userdata)
 [<AllowNullLiteral>]
-type Texture(device : Device, handle : TextureHandle) = 
+type Texture(device : Device, handle : TextureHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuTextureRelease(handle)
@@ -3544,10 +3610,12 @@ type Texture(device : Device, handle : TextureHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Texture")
+        refCount := !refCount + 1
         DawnRaw.wgpuTextureReference(handle)
-        new Texture(device, handle)
+        new Texture(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : TextureHandle) = new Texture(device, handle, ref 1)
     member inline x.CreateView() : TextureView = 
         let inline _LabelCont (_Label) = 
             let _Format = TextureViewDescriptor.Default.Format
@@ -3615,13 +3683,15 @@ type Texture(device : Device, handle : TextureHandle) =
     member inline x.Destroy() : unit = 
         DawnRaw.wgpuTextureDestroy(x.Handle)
 [<AllowNullLiteral>]
-type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle) = 
+type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuComputePassEncoderRelease(handle)
@@ -3629,10 +3699,12 @@ type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("ComputePassEncoder")
+        refCount := !refCount + 1
         DawnRaw.wgpuComputePassEncoderReference(handle)
-        new ComputePassEncoder(device, handle)
+        new ComputePassEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : ComputePassEncoderHandle) = new ComputePassEncoder(device, handle, ref 1)
     member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
         let inline _MarkerLabelCont (_MarkerLabel) = 
             DawnRaw.wgpuComputePassEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
@@ -3694,13 +3766,15 @@ type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle) =
     member inline x.EndPass() : unit = 
         DawnRaw.wgpuComputePassEncoderEndPass(x.Handle)
 [<AllowNullLiteral>]
-type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle) = 
+type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderBundleEncoderRelease(handle)
@@ -3708,10 +3782,12 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("RenderBundleEncoder")
+        refCount := !refCount + 1
         DawnRaw.wgpuRenderBundleEncoderReference(handle)
-        new RenderBundleEncoder(device, handle)
+        new RenderBundleEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : RenderBundleEncoderHandle) = new RenderBundleEncoder(device, handle, ref 1)
     member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuRenderBundleEncoderSetPipeline(x.Handle, _Pipeline)
@@ -3902,13 +3978,15 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle) =
         else
             _LabelCont 0n
 [<AllowNullLiteral>]
-type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle) = 
+type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderPassEncoderRelease(handle)
@@ -3916,10 +3994,12 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("RenderPassEncoder")
+        refCount := !refCount + 1
         DawnRaw.wgpuRenderPassEncoderReference(handle)
-        new RenderPassEncoder(device, handle)
+        new RenderPassEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : RenderPassEncoderHandle) = new RenderPassEncoder(device, handle, ref 1)
     member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuRenderPassEncoderSetPipeline(x.Handle, _Pipeline)
@@ -4118,13 +4198,15 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle) =
     member inline x.EndPass() : unit = 
         DawnRaw.wgpuRenderPassEncoderEndPass(x.Handle)
 [<AllowNullLiteral>]
-type CommandEncoder(device : Device, handle : CommandEncoderHandle) = 
+type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuCommandEncoderRelease(handle)
@@ -4132,10 +4214,12 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("CommandEncoder")
+        refCount := !refCount + 1
         DawnRaw.wgpuCommandEncoderReference(handle)
-        new CommandEncoder(device, handle)
+        new CommandEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : CommandEncoderHandle) = new CommandEncoder(device, handle, ref 1)
     member inline x.Finish() : CommandBuffer = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUCommandBufferDescriptor>
@@ -4482,13 +4566,15 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle) =
         let _QueryIndex = QueryIndex
         DawnRaw.wgpuCommandEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
 [<AllowNullLiteral>]
-type Queue(device : Device, handle : QueueHandle) = 
+type Queue(device : Device, handle : QueueHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
     member x.Device = device
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuQueueRelease(handle)
@@ -4496,10 +4582,12 @@ type Queue(device : Device, handle : QueueHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Queue")
+        refCount := !refCount + 1
         DawnRaw.wgpuQueueReference(handle)
-        new Queue(device, handle)
+        new Queue(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(device : Device, handle : QueueHandle) = new Queue(device, handle, ref 1)
     member inline x.Submit(Commands : array<CommandBuffer>) : unit = 
         let _CommandsCount = Commands.Length
         let _Commands = NativePtr.stackalloc _CommandsCount
@@ -4603,12 +4691,14 @@ type Queue(device : Device, handle : QueueHandle) =
         NativePtr.write _WriteSize _WriteSizeValue
         DawnRaw.wgpuQueueWriteTexture(x.Handle, _Destination, _Data, _DataSize, _DataLayout, _WriteSize)
 [<AllowNullLiteral>]
-type Device(handle : DeviceHandle) = 
+type Device(handle : DeviceHandle, refCount : ref<int>) = 
     let mutable isDisposed = false
+    member x.ReferenceCount = !refCount
     member x.Handle = handle
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
+            refCount := !refCount - 1
             isDisposed <- true
             if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuDeviceRelease(handle)
@@ -4616,10 +4706,12 @@ type Device(handle : DeviceHandle) =
     override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         if isDisposed then raise <| System.ObjectDisposedException("Device")
+        refCount := !refCount + 1
         DawnRaw.wgpuDeviceReference(handle)
-        new Device(handle)
+        new Device(handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
+    new(handle : DeviceHandle) = new Device(handle, ref 1)
     member inline x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup = 
         let inline _LabelCont (_Label) = 
             let _Layout = (if isNull Descriptor.Layout then BindGroupLayoutHandle.Null else Descriptor.Layout.Handle)
@@ -5356,10 +5448,10 @@ type Device(handle : DeviceHandle) =
             let _Type = Type
             let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
             let _Userdata = Userdata
-            _CallbackGC.Free()
+            if _CallbackGC.IsAllocated then _CallbackGC.Free()
             Callback.Invoke(_Type, _Message, _Userdata)
         let _CallbackDel = WGPUErrorCallback(_CallbackFunction)
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuDevicePopErrorScope(x.Handle, _Callback, _Userdata) <> 0
@@ -5369,10 +5461,10 @@ type Device(handle : DeviceHandle) =
             let _Type = Type
             let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
             let _Userdata = Userdata
-            _CallbackGC.Free()
+            if _CallbackGC.IsAllocated then _CallbackGC.Free()
             Callback.Invoke(_Type, _Message, _Userdata)
         let _CallbackDel = WGPUErrorCallback(_CallbackFunction)
-        let _CallbackGC = System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
+        _CallbackGC <- System.Runtime.InteropServices.GCHandle.Alloc(_CallbackDel)
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
         DawnRaw.wgpuDevicePopErrorScope(x.Handle, _Callback, _Userdata) <> 0
