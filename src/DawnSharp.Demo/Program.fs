@@ -2209,7 +2209,7 @@ module IndexListExtensions =
         //    | 2 -> FoundInRight(unbox<list<'a>> r.Rest, unbox<list<'a>> r.Delta)
         //    | _ -> Empty
 
-        type ExploreResult<'a> =
+        type ExploreResult<'a, 'b> =
             struct
                 val mutable public Tag : int
                 val mutable public Index : Index
@@ -2217,10 +2217,10 @@ module IndexListExtensions =
                 val mutable public Delta : obj
 
                 static member inline Empty =
-                    Unchecked.defaultof<ExploreResult<'a>>
+                    Unchecked.defaultof<ExploreResult<'a, 'b>>
 
-                static member inline FoundInLeft(index : Index, rest : IndexList<'a>, removes : list<Index>) =
-                    let mutable res = Unchecked.defaultof<ExploreResult<'a>>
+                static member inline FoundInLeft(index : Index, rest : IndexList<'b>, removes : list<Index>) =
+                    let mutable res = Unchecked.defaultof<ExploreResult<'a, 'b>>
                     res.Tag <- 1
                     res.Index <- index
                     res.Rest <- rest
@@ -2228,7 +2228,7 @@ module IndexListExtensions =
                     res
 
                 static member inline FoundInRight(rest : list<'a>, adds : list<'a>) =
-                    let mutable res = Unchecked.defaultof<ExploreResult<'a>>
+                    let mutable res = Unchecked.defaultof<ExploreResult<'a, 'b>>
                     res.Tag <- 2
                     res.Rest <- rest
                     res.Delta <- adds
@@ -2236,8 +2236,15 @@ module IndexListExtensions =
 
             end
 
+        [<Struct>]
+        type Differ<'a, 'b> =
+            {
+                create : 'a -> 'b
+                equals : OptimizedClosures.FSharpFunc<'b, 'a, bool>
+                update : OptimizedClosures.FSharpFunc<'b, 'a, bool>
+            }
 
-        let rec explore (equals : OptimizedClosures.FSharpFunc<'a, 'a, bool>) (l0 : 'a) (r0 : 'a) (left : bool) (li : IndexList<'a>) (rems : ListBuilder<Index>) (ri : list<'a>) (adds : ListBuilder<'a>) =
+        let rec explore (equals : OptimizedClosures.FSharpFunc<'b, 'a, bool>) (l0 : 'b) (r0 : 'a) (left : bool) (li : IndexList<'b>) (rems : ListBuilder<Index>) (ri : list<'a>) (adds : ListBuilder<'a>) =
             if li.IsEmpty && List.isEmpty ri then
                 ExploreResult.Empty
 
@@ -2259,13 +2266,13 @@ module IndexListExtensions =
                 | [] -> 
                     explore equals l0 r0 (not left) li rems ri adds
                 | ri0 :: ri1 ->
-                    if equals.Invoke(ri0, l0) then 
+                    if equals.Invoke(l0, ri0) then 
                         ExploreResult.FoundInRight(ri1, adds.ToList())
                     else
                         adds.Append ri0
                         explore equals l0 r0 (not left) li rems ri1 adds
                      
-        let rec computeDeltaAux (equals : OptimizedClosures.FSharpFunc<'a, 'a, bool>) (lastIndex : Index) (delta : IndexListDelta<'a>) (l : IndexList<'a>) (r : list<'a>) =
+        let rec computeDeltaAux (differ : Differ<'a, 'b>) (lastIndex : Index) (delta : IndexListDelta<'b>) (l : IndexList<'b>) (r : list<'a>) =
             if l.IsEmpty then //| Nil ->
                 // add the rest
                 let mutable delta = delta
@@ -2273,22 +2280,27 @@ module IndexListExtensions =
                 for n in r do
                     let id = Index.after lastIndex
                     lastIndex <- id
-                    delta <- IndexListDelta.add id (Set n) delta
+                    delta <- IndexListDelta.add id (Set (differ.create n)) delta
                 delta
             else //| Cons(il0, l0, l1) ->
                 let il0 = l.MinIndex
                 let (l0, l1) = l.TryRemove il0 |> Option.get
                 match r with
                 | r0 :: r1 ->
-                    if equals.Invoke(l0, r0) then
-                        computeDeltaAux equals il0 delta l1 r1
+                    if differ.equals.Invoke(l0, r0) then
+                        if differ.update.Invoke(l0, r0) then
+                            computeDeltaAux differ il0 delta l1 r1
+                        else
+                            let dd = IndexListDelta.add il0 (Set (differ.create r0)) delta
+                            computeDeltaAux differ il0 dd l1 r1
+                            
                     else
     
-                        let res = explore equals l0 r0 true l1 (ListBuilder()) r1 (ListBuilder())
+                        let res = explore differ.equals l0 r0 true l1 (ListBuilder()) r1 (ListBuilder())
                         match res.Tag with
                         | 1 -> // FoundInLeft(index, rest, rems) ->
                             let index = res.Index
-                            let rest = res.Rest :?> IndexList<'a>
+                            let rest = res.Rest :?> IndexList<'b>
                             let rems = res.Delta :?> list<Index>
 
                             let mutable delta = delta
@@ -2297,7 +2309,7 @@ module IndexListExtensions =
                             for r in rems do
                                 delta <- IndexListDelta.add r Remove delta
 
-                            computeDeltaAux equals index delta rest r1 
+                            computeDeltaAux differ index delta rest r1 
                         | 2 -> //FoundInRight(rest, adds) -> 
                             let rest = res.Rest :?> list<'a>
                             let adds = res.Delta :?> list<'a>
@@ -2307,17 +2319,20 @@ module IndexListExtensions =
 
                             let id = Index.between lastIndex il0
                             lastIndex <- id
-                            delta <- IndexListDelta.add id (Set r0) delta
+                            delta <- IndexListDelta.add id (Set (differ.create r0)) delta
                             for a in adds do
                                 let id = Index.between lastIndex il0
                                 lastIndex <- id
-                                delta <- IndexListDelta.add id (Set a) delta
+                                delta <- IndexListDelta.add id (Set (differ.create a)) delta
                             
-                            computeDeltaAux equals il0 delta l1 rest
+                            computeDeltaAux differ il0 delta l1 rest
 
                         | _ -> // Empty ->
-                            let dn = IndexListDelta.add il0 (Set r0) delta
-                            computeDeltaAux equals il0 dn l1 r1
+                            if differ.update.Invoke(l0, r0) then
+                                computeDeltaAux differ il0 delta l1 r1
+                            else
+                                let dn = IndexListDelta.add il0 (Set (differ.create r0)) delta
+                                computeDeltaAux differ il0 dn l1 r1
 
                 | [] ->
                     // remove the rest
@@ -2326,33 +2341,96 @@ module IndexListExtensions =
                         delta <- IndexListDelta.add id Remove delta
                     delta
                     
-        
-
+       
     let computeDelta (equals : 'a -> 'a -> bool) (l : IndexList<'a>) (r : list<'a>) : IndexListDelta<'a> =
-        let equals = OptimizedClosures.FSharpFunc<'a, 'a, bool>.Adapt(equals)
-        computeDeltaAux equals Index.zero IndexListDelta.empty l r
+        let differ =
+            {
+                create = id
+                equals = OptimizedClosures.FSharpFunc<'a, 'a, bool>.Adapt(equals)
+                update = OptimizedClosures.FSharpFunc<'a, 'a, bool>.Adapt(fun _ _ -> true)
+            }
+
+        computeDeltaAux differ Index.zero IndexListDelta.empty l r
+        
+    let computeDelta' (equals : 'b -> 'a -> bool) (invoke : 'a -> 'b) (update : 'b -> 'a -> bool) (l : IndexList<'b>) (r : list<'a>) : IndexListDelta<'b> =
+        let differ =
+            {
+                create = invoke
+                equals = OptimizedClosures.FSharpFunc<'b, 'a, bool>.Adapt(equals)
+                update = OptimizedClosures.FSharpFunc<'b, 'a, bool>.Adapt(update)
+            }
+
+        computeDeltaAux differ Index.zero IndexListDelta.empty l r
 
 module ComputeDeltaTests =
 
     open FSharp.Data.Adaptive
     
     let bla() =
-        let a = IndexList.ofList [1;2;3;4;2;7]
-        let b = [8;9;10]
 
-        let d = IndexListExtensions.computeDelta Unchecked.equals a b
+        let vals = clist (List.map cval [1;2;3;4;2;7])
 
-        let print (d : IndexListDelta<'a>) =
+        let test = vals |> AList.mapA (fun c -> c :> aval<_>)
+        let r = test.GetReader()
+        
+        let printDelta (name : string) (d : IndexListDelta<'a>) =
             let inline printDelta (i : Index, op : ElementOperation<'a>) =
                 let stri = (sprintf "%A" i).TrimEnd('0')
-
                 match op with
                 | Remove -> sprintf "Remove(%s)" stri
                 | Set v -> sprintf "Set(%s, %A)" stri v
-            let str = d |> IndexListDelta.toSeq |> Seq.map printDelta |> String.concat "; " |> sprintf "IndexListDelta [%s]"
-            printfn "%s" str
+            let str = d |> IndexListDelta.toSeq |> Seq.map printDelta |> String.concat "; " |> sprintf "%s [%s]" name
+            Log.line "%s" str
+            
+        let printState (d : IndexList<'a>) =
+            let str = d |> Seq.map (sprintf "%A") |> String.concat "; " |> sprintf "IndexList [%s]"
+            Log.line "%s" str
+            
+        let print () =
+            let ops = r.GetChanges(AdaptiveToken.Top)
+            printDelta "Output" ops
+            printState r.State
 
-        print d
+        let setContent (content : list<int>) =
+            transact (fun () ->
+                let delta = 
+                    IndexListExtensions.computeDelta'
+                        (fun (c : cval<int>) (v : int) -> c.Value = v)
+                        cval
+                        (fun (c : cval<int>) (v : int) -> c.Value <- v; true)
+                        vals.Value
+                        content
+
+                printDelta "Input" delta
+
+                for i, op in IndexListDelta.toSeq delta do
+                    match op with
+                    | Set v ->
+                        vals.[i] <- v
+                    | Remove ->
+                        vals.Remove i |> ignore
+            )
+
+
+
+        Log.start "initial"
+        print()
+        Log.stop()
+
+        Log.start "update [1;44;3]"
+        setContent [1;44;3]
+        print()
+        Log.stop()
+
+        
+        Log.start "update [1;2;3;100]"
+        setContent [1;2;3;100]
+        print()
+        Log.stop()
+
+
+
+
 
 
 
