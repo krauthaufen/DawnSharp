@@ -10,6 +10,18 @@ nuget Silk.NET.GLFW                         ~> 1.5.0
 nuget FShade                                ~> 5.1.2
 nuget FSharp.Data.Adaptive                  ~> 1.0.0
 
+
+nuget FsUnit                       
+nuget FsCheck                      
+nuget FsCheck.NUnit                
+nuget Microsoft.NET.Test.Sdk
+nuget Expecto                      
+nuget Expecto.FsCheck              
+nuget Expecto.VisualStudio.TestAdapter version_in_path: true
+nuget YoloDev.Expecto.TestSdk
+
+
+
 group Build
 source https://api.nuget.org/v3/index.json
 framework: netstandard2.0

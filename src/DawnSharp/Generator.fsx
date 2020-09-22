@@ -994,6 +994,7 @@ module rec Ast =
 
         printfn "namespace rec WebGPU"
         printfn "open System"
+        printfn "open System.Threading"
         printfn "open System.Security"
         printfn "open System.Runtime.InteropServices"
         printfn "open Microsoft.FSharp.NativeInterop"
@@ -1209,6 +1210,11 @@ module rec Ast =
                         yield sprintf "refCount"
                     ]
 
+                let destroy, meths =
+                    meths |> List.partition (fun m -> m.name = "Destroy")
+
+                let destroy = List.tryHead destroy
+
                 printfn "[<AllowNullLiteral>]"
                 printfn "type %s(%s) = " name ctorArgsWithRefCount
                 printfn "    let mutable isDisposed = false"
@@ -1221,16 +1227,21 @@ module rec Ast =
 
                 printfn "    member private x.Dispose(disposing : bool) ="
                 printfn "        if not isDisposed then "
-                printfn "            refCount := !refCount - 1"
+                printfn "            let r = Interlocked.Decrement(&refCount.contents)"
                 printfn "            isDisposed <- true"
                 printfn "            if disposing then System.GC.SuppressFinalize x"
+                match destroy with
+                | Some destroy -> 
+                    printfn "            if r = 0 then DawnRaw.wgpu%sDestroy(handle)" name
+                | None ->
+                    ()
                 printfn "            DawnRaw.wgpu%sRelease(handle)" name
+
 
                 printfn "    member x.Dispose() = x.Dispose(true)"
                 printfn "    override x.Finalize() = x.Dispose(false)"
                 printfn "    member x.Clone() = "
-                printfn "        if isDisposed then raise <| System.ObjectDisposedException(\"%s\")" name
-                printfn "        refCount := !refCount + 1"
+                printfn "        if isDisposed || Interlocked.Increment(&refCount.contents) = 1 then raise <| System.ObjectDisposedException(\"%s\")" name
                 printfn "        DawnRaw.wgpu%sReference(handle)" name
                 printfn "        new %s(%s)" name ctorArgsUseWithRefCount
                 printfn "    interface System.IDisposable with"

@@ -518,10 +518,6 @@ let run(device : Device) =
     if arr = input then printfn "success"
     else printfn "error"
 
-
-    dst.Destroy()
-    src.Destroy()
-    real.Destroy()
     src.Dispose()
     dst.Dispose()
     real.Dispose()
@@ -2383,13 +2379,7 @@ module IndexListExtensions =
                         delta <- IndexListDelta.add id Remove delta
                     delta
              
-             
-        [<Struct>]
-        type Op<'a> =
-            | Insert of before : Index * after : Index * value : 'a
-            | Remove of index : Index
-
-                                    
+                                       
         type Entry<'k, 'v> =
             val mutable public Key : 'k
             val mutable public Value : 'v
@@ -2399,11 +2389,10 @@ module IndexListExtensions =
 
         type Heap<'k, 'v when 'k : equality>(cmp : System.Collections.Generic.IComparer<'v>) =
 
-            let store = System.Collections.Generic.List<Entry<'k, 'v>>()
-            let dict = System.Collections.Generic.Dictionary<'k, Entry<'k, 'v>>()
+            let store = System.Collections.Generic.List<Entry<'k, 'v>>(128)
+            let dict = Dict<'k, Entry<'k, 'v>>(128)
 
-            let validate (i : int) =
-                ()
+            //let rec validate (i : int) =
                 //if i < store.Count then
                 //    let e = store.[i]
                 //    if e.Index <> i then failwith "bad index"
@@ -2492,22 +2481,29 @@ module IndexListExtensions =
             member x.Count = store.Count
 
             member x.Enqueue(key : 'k, value : 'v) =
-                match dict.TryGetValue key with
-                | (true, e) ->
+                let isNew = ref false
+                let e = 
+                    dict.GetOrCreate(key, fun key ->
+                        let idx = store.Count
+                        let e = Entry(key, value)
+                        store.Add(e)
+                        bubbleUp idx e
+                        isNew := true
+                        e
+                    )
+                if not !isNew then
                     let c = cmp.Compare(value, e.Value)
                     if c < 0 then
                         e.Value <- value
                         bubbleUp e.Index e
 
-                    validate 0
-
-                | _ ->
-                    let idx = store.Count
-                    let e = Entry(key, value)
-                    dict.[key] <- e
-                    store.Add(e)
-                    bubbleUp idx e
-                    validate 0
+                //| _ ->
+                //    let idx = store.Count
+                //    let e = Entry(key, value)
+                //    dict.[key] <- e
+                //    store.Add(e)
+                //    bubbleUp idx e
+                //    validate 0
 
             member x.Dequeue() =
                 if store.Count = 0 then raise <| IndexOutOfRangeException "heap empty"
@@ -2521,17 +2517,104 @@ module IndexListExtensions =
                     store.[0] <- le
                     le.Index <- 0
                     pushDown 0 le
-                validate 0
+
                 res.Value
 
+
+
+        
+        type Operation =
+            | Insert = 1
+            | Remove = 2
+            | Update = 3
+
+        type OperationList private(values : list<uint64>, used : int) =
+    
+            static member Empty = OperationList([], 0)
+          
+            member x.Count = used
+
+            member x.Append(op : Operation) =
+                if used = 0 then
+                    OperationList([uint64 op], 1)
+                else
+                    let usedInLast = used &&& 31
+                    if usedInLast <> 0 then
+                        match values with
+                        | h :: t ->
+                            OperationList(((h <<< 2) ||| (uint64 op)) :: t, used + 1)
+                        | _ ->
+                            failwith "bad list"
+                    else
+                        OperationList((uint64 op) :: values, used + 1)
+
+            member x.Iter (action : Operation -> unit) =
+                let rec traverse (action : Operation -> unit) (l : list<uint64>) =
+                    match l with
+                    | [] -> 
+                        ()
+                    | h :: t ->
+                        traverse action t
+
+                        if System.Runtime.Intrinsics.X86.Bmi1.X64.IsSupported then
+                            let mutable sb = 62uy
+                            for i in 0 .. 31 do
+                                let op = System.Runtime.Intrinsics.X86.Bmi1.X64.BitFieldExtract(h, sb, 2uy) |> int |> unbox<Operation>
+                                action op
+                                sb <- sb - 2uy
+                        else
+                            let mutable h = h
+                            for i in 0 .. 31 do
+                                let op = ((h &&& 0xC000000000000000UL) >>> 62) |> int |> unbox<Operation>
+                                action op
+                                h <- h <<< 2
+                    
+                match values with
+                | h :: t ->
+                    let rem = (used &&& 31)
+                    if rem = 0 then
+                        traverse action values
+                    else
+                        traverse action t
+                        if System.Runtime.Intrinsics.X86.Bmi1.X64.IsSupported then
+                            let mutable sb = (byte rem <<< 1) - 2uy
+                            for i in 0 .. rem-1 do
+                                let op = System.Runtime.Intrinsics.X86.Bmi1.X64.BitFieldExtract(h, sb, 2uy) |> int |> unbox<Operation>
+                                action op
+                                sb <- sb - 2uy
+                        else
+                            let mutable h = h
+                            let v = 64 - (used <<< 1)
+                            h <- h <<< v
+                            for i in 0 .. rem - 1 do
+                                let op = ((h &&& 0xC000000000000000UL) >>> 62) |> int |> unbox<Operation>
+                                action op
+                                h <- h <<< 2
+
+                | [] ->
+                    ()
+
+            member x.ToList() =
+                let b = ListBuilder()
+                x.Iter b.Append
+                b.ToList()
+
+            member x.AsArray =
+                let mutable index = 0
+                let arr = Array.zeroCreate used
+                x.Iter (fun v ->
+                    arr.[index] <- v
+                    index <- index + 1
+                )
+                arr
+
         type Path<'a, 'b> =
-            {
+            { 
                 length : float
                 position : V2i
                 weight : float
-                path : list<Op<'a>>
-                lastIndex : Index
-                left : IndexList<'b>
+                path : OperationList
+                left : list<Index * 'b>
                 right : list<'a>
             }
 
@@ -2549,7 +2632,8 @@ module IndexListExtensions =
             let expand (equals : OptimizedClosures.FSharpFunc<'b, 'a, bool>) (target : V2i) (queue : Heap<V2i, Path<'a, 'b>>) =
                 let best = queue.Dequeue()
                 
-                if best.left.IsEmpty then
+                match best.left with
+                | [] -> 
                     // left is empty
                     match best.right with
                     | [] ->
@@ -2564,18 +2648,18 @@ module IndexListExtensions =
                             { 
                                 position = pos
                                 length = len
-                                path = Insert(best.lastIndex, Index.zero, h) :: best.path
+                                path = best.path.Append Operation.Insert
                                 weight = Vec.distance pos target + len
-                                lastIndex = best.lastIndex
-                                left = IndexList.empty
+                                left = []
                                 right = t
                             }
                         )
                         ValueNone
-                else
+                | (li0, l0) :: l1 -> 
+                    
                     // left is non-empty
-                    let li0 = best.left.MinIndex
-                    let (l0, l1) = best.left |> IndexList.tryRemove li0 |> Option.get
+                    //let li0 = best.left.MinIndex
+                    //let (l0, l1) = best.left |> IndexList.tryRemove li0 |> Option.get
 
                     match best.right with
                     | [] ->
@@ -2587,9 +2671,8 @@ module IndexListExtensions =
                             { 
                                 position = pos
                                 length = len
-                                path = Remove li0 :: best.path
+                                path = best.path.Append Operation.Remove
                                 weight = Vec.distance pos target + len
-                                lastIndex = li0
                                 left = l1
                                 right = []
                             }
@@ -2597,45 +2680,11 @@ module IndexListExtensions =
                         ValueNone
                     | r0 :: r1 ->
                         
-                        do // Remove
-                            let len = best.length + 1.0
-                            let pos = best.position + V2i(1,0)
-                            queue.Enqueue(
-                                pos,
-                                { 
-                                    position = pos
-                                    length = len
-                                    path = Remove li0 :: best.path
-                                    weight = Vec.distance pos target + len
-                                    lastIndex = li0
-                                    left = l1
-                                    right = best.right
-                                }
-                            )
-
-                        do // Add
-                            let len = best.length + 1.0
-                            let pos = best.position + V2i(0,1)
-                            queue.Enqueue(
-                                pos,
-                                { 
-                                    position = pos
-                                    length = len
-                                    path = Insert(best.lastIndex, li0, r0) :: best.path
-                                    weight = Vec.distance pos target + len
-                                    lastIndex = best.lastIndex
-                                    left = best.left
-                                    right = r1
-                                }
-                            )
-
-
 
                         if equals.Invoke(l0, r0) then
                             // equal heads
-                            let path = best.path
 
-                            let inline cont (pos : V2i) (len : float) (lastIndex : Index) (l : IndexList<'b>) (r : list<'a>) =
+                            let inline cont (path : OperationList) (pos : V2i) (len : float) (lastIndex : Index) (l : list<Index * 'b>) (r : list<'a>) =
                                 queue.Enqueue(
                                     pos,
                                     { 
@@ -2643,29 +2692,63 @@ module IndexListExtensions =
                                         length = len
                                         weight = Vec.distance pos target + len
                                         path = path
-                                        lastIndex = lastIndex
                                         left = l
                                         right = r
                                     }
                                 )
 
-                            let rec skipEqualPrefix (pos : V2i) (len : float) (lastIndex : Index) (l : IndexList<'b>) (r : list<'a>) =
-                                if l.IsEmpty then
-                                    cont pos len lastIndex l r
-                                else
+                            let rec skipEqualPrefix (path : OperationList) (pos : V2i) (len : float) (lastIndex : Index) (l : list<Index * 'b>) (r : list<'a>) =
+                                match l with
+                                | [] ->
+                                    cont path pos len lastIndex l r
+                                | (li0, l0) :: l1 ->
                                     match r with
                                     | r0 :: r1 ->
-                                        let li0 = l.MinIndex
-                                        let (l0, l1) = l.TryRemove li0 |> Option.get
+                                        //let li0 = l.MinIndex
+                                        //let (l0, l1) = l.TryRemove li0 |> Option.get
 
                                         if equals.Invoke(l0, r0) then
-                                            skipEqualPrefix (pos + V2i.II) (len + Constant.Sqrt2) li0 l1 r1
+                                            let pp = path.Append Operation.Update
+                                            skipEqualPrefix pp (pos + V2i.II) (len + Constant.Sqrt2) li0 l1 r1
                                         else
-                                            cont pos len lastIndex l r
+                                            cont path pos len lastIndex l r
                                     | [] ->
-                                        cont pos len lastIndex l r
+                                        cont path pos len lastIndex l r
 
-                            skipEqualPrefix (best.position + V2i(1,1)) (best.length + Constant.Sqrt2) li0 l1 r1
+
+                            skipEqualPrefix (best.path.Append Operation.Update) (best.position + V2i(1,1)) (best.length + Constant.Sqrt2) li0 l1 r1
+
+                        else
+                            do // Remove
+                                let len = best.length + 1.0
+                                let pos = best.position + V2i(1,0)
+                                queue.Enqueue(
+                                    pos,
+                                    { 
+                                        position = pos
+                                        length = len
+                                        path = best.path.Append Operation.Remove
+                                        weight = Vec.distance pos target + len
+                                        left = l1
+                                        right = best.right
+                                    }
+                                )
+
+                            do // Add
+                                let len = best.length + 1.0
+                                let pos = best.position + V2i(0,1)
+                                queue.Enqueue(
+                                    pos,
+                                    { 
+                                        position = pos
+                                        length = len
+                                        path = best.path.Append Operation.Insert
+                                        weight = Vec.distance pos target + len
+                                        left = best.left
+                                        right = r1
+                                    }
+                                )
+
 
                         ValueNone
                        
@@ -2673,6 +2756,7 @@ module IndexListExtensions =
 
         let rec astar (differ : Differ<'a, 'b>) (l : IndexList<'b>) (rCount : int) (r : list<'a>) =
             if l.Count = 0 then
+                // all new
                 let mutable i = Index.zero
                 let mutable delta = IndexListDelta.empty
                 for ri in r do
@@ -2683,9 +2767,12 @@ module IndexListExtensions =
 
                 delta
             elif rCount = 0 then
+                // all removed
                 IndexList.computeDelta l IndexList.empty
             else
                 let target = V2i(l.Count, rCount)
+
+                let l = IndexList.toListIndexed l
 
                 let p0 =
                     {
@@ -2693,11 +2780,9 @@ module IndexListExtensions =
                         right = r
                         length = 0.0
                         position = V2i.OO
-                        path = []
-                        lastIndex = Index.zero
+                        path = OperationList.Empty
                         weight = Vec.distance V2i.OO target
                     }
-
 
                 let paths = Heap<V2i, Path<'a, 'b>>(Path.Cmp.Compare)
                 paths.Enqueue(p0.position, p0)
@@ -2709,33 +2794,66 @@ module IndexListExtensions =
                 while not fin && paths.Count > 0 do
                     match Path.expand differ.equals target paths with
                     | ValueSome best ->
-                        let rec run (last : Index) (acc : IndexListDelta<'b>) (delta : list<Op<'a>>) =
-                            match delta with
-                            | [] -> 
-                                acc
-                            | Remove i0 :: Insert(_, i1, v) :: rest
-                            | Insert(i1, _, v) :: Remove i0 :: rest when i0 = i1 ->
-                                let a = IndexListDelta.add i0 (Set (differ.create v)) acc
-                                run i0 a rest
+                        let path = best.path.ToList()
+                        let rec run (delta : IndexListDelta<'b>) (lastIndex : Index) (ops : list<Operation>) (l : list<Index * 'b>) (r : list<'a>) =
+                            match ops with
+                            | [] ->
+                                delta
 
-                            | Remove i0 :: rest ->
-                                let a = IndexListDelta.add i0 ElementOperation.Remove acc
-                                run i0 a rest
+                            | Operation.Update :: ops ->
+                                match l with
+                                | (lid,l0) :: l1 ->
+                                    match r with
+                                    | r0 :: r1 -> 
+                                        if differ.update.Invoke(l0, r0) then
+                                            run delta lid ops l1 r1
+                                        else
+                                            run (IndexListDelta.add lid (Set (differ.create r0)) delta) lid ops l1 r1
+                                    | [] ->
+                                        failwith "empty list"
+                                | [] ->
+                                    failwith "empty list"
 
-                            | Insert(l,r,v) :: rest ->
-                                let r = 
-                                    if last <> Index.zero then min r last
-                                    else r
-                                let id =
-                                    if l = Index.zero then Index.before r
-                                    elif r = Index.zero then Index.after l
-                                    else Index.between l r
-                                let a = IndexListDelta.add id (Set (differ.create v)) acc
-                                run id a rest
-                            
-                            
-                        delta <- run Index.zero IndexListDelta.empty best.path
-                        //delta <- IndexListDelta.empty
+                            | Operation.Remove :: Operation.Insert :: ops 
+                            | Operation.Insert :: Operation.Remove :: ops ->
+                                match l with
+                                | (id, l0) :: l1 ->
+                                    match r with
+                                    | r0 :: r1 ->
+                                        if differ.update.Invoke(l0, r0) then
+                                            run delta id ops l1 r1
+                                        else
+                                            run (IndexListDelta.add id (ElementOperation.Set (differ.create r0)) delta) id ops
+                                                l1 r1
+                                    | [] ->
+                                        failwith "bad"
+                                | [] ->
+                                    failwith "bad"
+
+                            | Operation.Remove :: ops ->
+                                match l with
+                                | (id,_) :: l1 ->
+                                    run (IndexListDelta.add id ElementOperation.Remove delta) id ops
+                                        l1 r
+                                | [] ->
+                                    failwith "bad"
+                                    
+                            | Operation.Insert :: ops ->
+                                match r with
+                                | r0 :: r1 -> 
+                                    let id = 
+                                        match l with
+                                        | [] -> Index.after lastIndex
+                                        | (n,_) :: _ -> Index.between lastIndex n
+                                    run (IndexListDelta.add id (ElementOperation.Set (differ.create r0)) delta) id ops
+                                        l r1
+                                | [] ->
+                                    failwith "bad"
+                                
+                            | op :: _ ->
+                                failwithf "bad op: %A" op
+
+                        delta <- run IndexListDelta.empty Index.zero path l r
                         fin <- true
                     | ValueNone ->
                         ()
@@ -2744,7 +2862,16 @@ module IndexListExtensions =
                 delta
 
 
+   
+    let astar' (equals : 'b -> 'a -> bool) (invoke : 'a -> 'b) (update : 'b -> 'a -> bool) (l : IndexList<'b>) (rCount : int) (r : list<'a>) : IndexListDelta<'b> =
+        let differ =
+            {
+                create = invoke
+                equals = OptimizedClosures.FSharpFunc<'b, 'a, bool>.Adapt(equals)
+                update = OptimizedClosures.FSharpFunc<'b, 'a, bool>.Adapt(update)
+            }
 
+        astar differ l rCount r
 
     let astar (equals : 'a -> 'a -> bool) (l : IndexList<'a>) (rCount : int) (r : list<'a>) : IndexListDelta<'a> =
         let differ =
@@ -2755,7 +2882,7 @@ module IndexListExtensions =
             }
         astar differ l rCount r
 
-       
+     
     let computeDelta (equals : 'a -> 'a -> bool) (l : IndexList<'a>) (r : list<'a>) : IndexListDelta<'a> =
         let differ =
             {
@@ -2808,11 +2935,12 @@ module ComputeDeltaTests =
         let setContent (content : list<int>) =
             transact (fun () ->
                 let delta = 
-                    IndexListExtensions.computeDelta'
+                    IndexListExtensions.astar'
                         (fun (c : cval<int>) (v : int) -> c.Value = v)
-                        cval
-                        (fun (c : cval<int>) (v : int) -> c.Value <- v; true)
+                        (fun v -> Log.line "new %A" v; cval v)
+                        (fun (c : cval<int>) (v : int) -> Log.line "%A <- %A" c.Value v; c.Value <- v; true)
                         vals.Value
+                        (List.length content)
                         content
 
                 printDelta "Input" delta
@@ -2857,49 +2985,116 @@ module ComputeDeltaTests =
         let (n,_) = IndexList.applyDelta l delta 
         printfn "%A" (IndexList.toList n)
 
-       
-
-
-
-
-
     let benchmark() =
+        let csv = System.Text.StringBuilder()
+
+        let types =
+            [
+                "single replaced element", fun (l : list<int>) ->
+                    let remIndex = List.length l / 2
+                    List.take remIndex l @ [10000] @ List.skip (remIndex + 1) l
+
+                "single insertion", fun (l : list<int>) ->
+                    let remIndex = List.length l / 2
+                    List.take remIndex l @ [10000] @ List.skip remIndex l
+                    
+                "single delete", fun (l : list<int>) ->
+                    let remIndex = List.length l / 2
+                    List.take remIndex l @ List.skip (remIndex + 1) l
+
+            ]
+
+        
+        csv.AppendLine (("size" :: List.map fst types) |> String.concat ";") |> ignore
+
         let rand = RandomSystem()
-        for size in [100..100..1000] do
-            Log.start "%d" size
-            let l = List.init size (fun _ -> rand.UniformInt 1000)
-            let a = l |> IndexList.ofList
+        for size in [50 .. 50 .. 5000] do
 
-            let remIndex = size / 2
-            let b = List.take remIndex l @ [10000 .. 10009] @ List.skip (remIndex + 1) l//1234 :: l @ [12345]
-            let bCnt = List.length b
-                //l |> List.choose (fun v ->
-                //    if rand.UniformDouble() > 0.9 then None
-                //    else 
-                //        if rand.UniformDouble() > 0.9 then Some (v + 1000)
-                //        else Some v
-                //)
+            let times =
+                types |> List.map (fun (name, modify) ->
 
+                    Log.start "%s %d" name size
+                    let l = List.init size (fun _ -> rand.UniformInt 1000)
+                    let a = l |> IndexList.ofList
 
-            let iter = 5000
-            for i in 1 .. 4 do
-                IndexListExtensions.astar Unchecked.equals a bCnt b
-                |> ignore
+                    let b = modify l
+                    let bCnt = List.length b
+                        
+                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                    let mutable iter = 0
+                    
+                    while sw.Elapsed.TotalMilliseconds < 200.0 do
+                        IndexListExtensions.astar Unchecked.equals a bCnt b
+                        //IndexListExtensions.computeDelta Unchecked.equals a b
+                        |> ignore
+                        iter <- iter + 1
+                    sw.Stop()
+
+                    let iter = 
+                        Fun.NextPowerOfTwo (max 32 (iter * 5))
+                    for i in 1 .. 4 do
+                        IndexListExtensions.astar Unchecked.equals a bCnt b
+                        //IndexListExtensions.computeDelta Unchecked.equals a b
+                        |> ignore
                 
-            GC.Collect(3)
-            GC.WaitForFullGCComplete() |> ignore
+                    GC.Collect(3)
+                    GC.WaitForFullGCComplete() |> ignore
 
-            let sw = System.Diagnostics.Stopwatch.StartNew()
-            for i in 0 .. iter-1 do
-                IndexListExtensions.astar Unchecked.equals a bCnt b
-                |> ignore
-            sw.Stop()
+                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                    for i in 0 .. iter-1 do
+                        IndexListExtensions.astar Unchecked.equals a bCnt b
+                        //IndexListExtensions.computeDelta Unchecked.equals a b
+                        |> ignore
+                    sw.Stop()
           
-            Report.End(sprintf " %A" (sw.MicroTime / iter)) |> ignore
+                    Report.End(sprintf " %A" (sw.MicroTime / iter)) |> ignore
+                    sw.Elapsed.TotalMilliseconds / float iter
+                )
+
+            let t = times |> Seq.map (fun v -> sprintf "%.8f" v) |> String.concat ";"
+            csv.AppendLine(sprintf "%d;%s" size t) |> ignore
+
+        let desktop = Environment.GetFolderPath Environment.SpecialFolder.Desktop
+        File.writeAllText (Path.combine [desktop; "diff.csv"]) (csv.ToString())
 
 
     let validate() =  
-        let iter = 100
+
+        let printError (i : int) (a : list<int>) (b : list<int>) =
+            let list = IndexList.ofList a
+
+            Log.start "error %d" i
+
+            let chunkSize = 8
+            Log.start "left"
+            for chunk in IndexList.toSeqIndexed list |> Seq.chunkBySize chunkSize do
+                let str = chunk |> Seq.map (fun (i,a) -> sprintf "%A: %A" i a) |> String.concat "; "
+                Log.line "%s" str
+            Log.stop()
+
+            Log.start "right"
+            for chunk in Seq.chunkBySize chunkSize b do
+                let str = chunk |> Seq.map (fun a -> sprintf "%A" a) |> String.concat "; "
+                Log.line "%s" str
+            Log.stop()
+
+            let delta = IndexListExtensions.astar Unchecked.equals list (List.length b) b
+            Log.start "delta"
+            for chunk in Seq.chunkBySize chunkSize (IndexListDelta.toSeq delta) do
+                let str = chunk |> Seq.map (fun (i,a) -> sprintf "%A: %A" i a) |> String.concat "; "
+                Log.line "%s" str
+            Log.stop()
+
+            let (res, _) = IndexList.applyDelta list delta
+            Log.start "result"
+            for chunk in Seq.chunkBySize chunkSize (IndexList.toSeq res) do
+                let str = chunk |> Seq.map (fun a -> sprintf "%A" a) |> String.concat "; "
+                Log.line "%s" str
+            Log.stop()
+
+            Log.stop()
+
+        let iter = 5000
         Log.startTimed "computeDelta"
         let rand = RandomSystem()
         let mutable failed = []
@@ -2917,70 +3112,28 @@ module ComputeDeltaTests =
             if b = n then
                 passed <- passed + 1
             else
+                printError failedCount a b
                 failed <- (a,b) :: failed
                 failedCount <- failedCount + 1
             Report.Progress(float i / float iter)
 
         Report.Progress 1.0
-
-        Log.line "%d tests passed" passed
         if failedCount > 0 then
             Log.line "%d tests failed" failedCount
-            for i, (a, b) in Seq.indexed failed do     
-                let list = IndexList.ofList a
-
-                Log.start "error %d" i
-
-                let chunkSize = 8
-                Log.start "left"
-                for chunk in IndexList.toSeqIndexed list |> Seq.chunkBySize chunkSize do
-                    let str = chunk |> Seq.map (fun (i,a) -> sprintf "%A: %A" i a) |> String.concat "; "
-                    Log.line "%s" str
-                Log.stop()
-
-                Log.start "right"
-                for chunk in Seq.chunkBySize chunkSize b do
-                    let str = chunk |> Seq.map (fun a -> sprintf "%A" a) |> String.concat "; "
-                    Log.line "%s" str
-                Log.stop()
-
-                let delta = IndexListExtensions.astar Unchecked.equals list (List.length b) b
-                Log.start "delta"
-                for chunk in Seq.chunkBySize chunkSize (IndexListDelta.toSeq delta) do
-                    let str = chunk |> Seq.map (fun (i,a) -> sprintf "%A: %A" i a) |> String.concat "; "
-                    Log.line "%s" str
-                Log.stop()
-
-                let (res, _) = IndexList.applyDelta list delta
-                Log.start "result"
-                for chunk in Seq.chunkBySize chunkSize (IndexList.toSeq res) do
-                    let str = chunk |> Seq.map (fun a -> sprintf "%A" a) |> String.concat "; "
-                    Log.line "%s" str
-                Log.stop()
-
-                Log.stop()
-
+        Log.line "%d tests passed" passed
         Log.stop()
         
 
 
 open FSharp.Data.Adaptive
 
+
+
+
 [<EntryPoint; STAThread>]
 let main argv =     
+    ComputeDeltaTests.validate()
     ComputeDeltaTests.benchmark()
-    exit 0
-
-
-    let a = [1;2;3;4;7]
-    let b = [2;4;5;6;7]
-    let diff = diff a b
-    printfn "%A" diff
-
-    let b1 = applyDelta diff (List.toArray a)
-    printfn "%A" b1
-
-
     exit 0
 
     Aardvark.Init()
@@ -3013,6 +3166,11 @@ let main argv =
     | _ -> 
         let dev = a.CreateDevice()
         
+        for e in a.Extensions do
+            printfn "%s" e
+
+        exit 0
+
         Sg.Hans.test dev
         //run dev
         use buffy = dev.CreateBuffer<int>(1024, BufferUsage.CopySrc ||| BufferUsage.CopyDst)
@@ -3221,6 +3379,11 @@ let main argv =
 
             use tex = chain.GetCurrentTextureView()
 
+            let a = dev.CreateRenderBundleEncoder (failwith "")
+            let bla = a.Finish()
+
+
+
             use cmd = dev.CreateCommandEncoder()
             use pass = 
                 cmd.BeginRenderPass { 
@@ -3251,12 +3414,16 @@ let main argv =
                     OcclusionQuerySet = null
                 }
 
+            pass.ExecuteBundles [| bla |]
             pass.SetPipeline(pipeline)
             //pass.SetIndexBufferWithFormat(ib, IndexFormat.Uint32, 0UL, 4UL * uint64 idx.Length)
             pass.SetVertexBuffer(0, buf, 0UL, 12UL * uint64 arr.Length)
+           
             pass.Draw(arr.Length, 1, 0, 0)
 
             pass.EndPass()
+           
+           
             use buf = cmd.Finish()
             queue.Submit [| buf |]
 

@@ -83,7 +83,7 @@ type DeviceTransferQueue(device : Device) =
     let uploadMem =
         {
             MemoryManagement.malloc = fun size -> device.CreateBuffer { Label = null; Size = uint64 size; Usage = BufferUsage.MapWrite ||| BufferUsage.CopySrc; MappedAtCreation = false }
-            MemoryManagement.mfree = fun buffer _ -> buffer.Destroy(); buffer.Dispose()
+            MemoryManagement.mfree = fun buffer _ -> buffer.Dispose()
             MemoryManagement.mcopy = fun src srcOff dst dstOff size -> failwith "copy not implemented"
             MemoryManagement.mrealloc = fun buf os ns -> failwith "resize not implemented"
         }
@@ -91,7 +91,7 @@ type DeviceTransferQueue(device : Device) =
     let downloadMem =
         {
             MemoryManagement.malloc = fun size -> device.CreateBuffer { Label = null; Size = uint64 size; Usage = BufferUsage.MapRead ||| BufferUsage.CopyDst; MappedAtCreation = false }
-            MemoryManagement.mfree = fun buffer _ -> buffer.Destroy(); buffer.Dispose()
+            MemoryManagement.mfree = fun buffer _ -> buffer.Dispose()
             MemoryManagement.mcopy = fun src srcOff dst dstOff size -> failwith "copy not implemented"
             MemoryManagement.mrealloc = fun buf os ns -> failwith "resize not implemented"
         }

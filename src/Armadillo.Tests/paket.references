@@ -1,0 +1,10 @@
+FSharp.Core
+GLSLangSharp
+Aardvark.Base
+Aardvark.Base.FSharp
+Expecto
+Expecto.FsCheck
+Expecto.VisualStudio.TestAdapter
+Microsoft.NET.Test.Sdk
+YoloDev.Expecto.TestSdk
+FsUnit

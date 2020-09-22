@@ -367,7 +367,6 @@ module Diffing =
 
         override x.Destroy(handle : Buffer) =
             printfn "delete buffer %d" x.Id
-            handle.Destroy()
             handle.Dispose()
 
         override x.Create() = 
