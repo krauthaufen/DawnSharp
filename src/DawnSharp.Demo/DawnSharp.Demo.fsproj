@@ -16,6 +16,7 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Armadillo\Armadillo.fsproj" />
     <ProjectReference Include="..\DawnSharp\DawnSharp.fsproj" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

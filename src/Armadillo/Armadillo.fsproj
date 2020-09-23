@@ -15,6 +15,7 @@
     <Compile Include="Tools\ListBuilder.fs" />
     <Compile Include="Tools\Heap.fs" />
     <Compile Include="Tools\ListDiff.fs" />
+    <Compile Include="Component.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

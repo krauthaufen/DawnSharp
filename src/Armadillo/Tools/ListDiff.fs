@@ -7,12 +7,17 @@ open System.Collections.Generic
 open Aardvark.Base
 open FSharp.Data.Adaptive
 
+type UpdateStatus =
+    | Nop = 0
+    | Success = 1
+    | Error = 2
+
 
 type ListDiffing<'a, 'b> =
     abstract member Create : 'b -> 'a
     abstract member Destroy : 'a -> unit
     abstract member Equals : 'a * 'b -> bool
-    abstract member TryUpdate : 'a * 'b -> bool
+    abstract member TryUpdate : 'a * 'b -> UpdateStatus
 
 module ListDiffing =
     
@@ -25,7 +30,7 @@ module ListDiffing =
             member x.Create a = a
             member x.Destroy _ = ()
             member x.Equals(a, b) = Unchecked.equals a b
-            member x.TryUpdate(a, b) = Unchecked.equals a b
+            member x.TryUpdate(a, b) = if Unchecked.equals a b then UpdateStatus.Nop else UpdateStatus.Error
             
     type private UsingDiffing<'a, 'b when 'a :> System.IDisposable>(inner : ListDiffing<'a, 'b>) =
         interface ListDiffing<'a, 'b> with
@@ -39,8 +44,8 @@ module ListDiffing =
     let using<'a, 'b when 'a :> System.IDisposable> (d : ListDiffing<'a, 'b>) = 
         UsingDiffing(d) :> ListDiffing<_,_>
 
-    let custom (equals : 'a -> 'b -> bool) (create : 'b -> 'a) (destroy : 'a -> unit) (tryUpdate : 'a -> 'b -> bool)  = 
-        let tryUpdate = OptimizedClosures.FSharpFunc<'a, 'b, bool>.Adapt tryUpdate
+    let custom (equals : 'a -> 'b -> bool) (create : 'b -> 'a) (destroy : 'a -> unit) (tryUpdate : 'a -> 'b -> UpdateStatus)  = 
+        let tryUpdate = OptimizedClosures.FSharpFunc<'a, 'b, UpdateStatus>.Adapt tryUpdate
         let equals = OptimizedClosures.FSharpFunc<'a, 'b, bool>.Adapt equals
         { new ListDiffing<'a, 'b> with 
             member x.Create(b) = create b
@@ -408,23 +413,26 @@ module AStar =
                  
         let astarIndexList (differ : ListDiffing<'a, 'b>) (l : IndexList<'a>) (rCount : int) (r : list<'b>) =
             if l.Count = 0 then
-                // all new
-                let mutable i = Index.zero
-                let mutable delta = IndexListDelta.empty
-                for ri in r do
-                    let v = differ.Create ri
-                    let id = Index.after i
-                    delta <- IndexListDelta.add id (Set v) delta
-                    i <- id
+                if rCount = 0 then
+                    struct(UpdateStatus.Nop, IndexListDelta.empty)
+                else
+                    // all new
+                    let mutable i = Index.zero
+                    let mutable delta = IndexListDelta.empty
+                    for ri in r do
+                        let v = differ.Create ri
+                        let id = Index.after i
+                        delta <- IndexListDelta.add id (Set v) delta
+                        i <- id
 
-                delta
+                    struct(UpdateStatus.Error, delta)
             elif rCount = 0 then
                 // all removed
                 let mutable delta = IndexListDelta.empty
                 for (id, v) in IndexList.toSeqIndexed l do  
                     differ.Destroy v
                     delta <- IndexListDelta.add id Remove delta
-                delta
+                struct(UpdateStatus.Error, delta)
             else    
                 let target = V2i(l.Count, rCount)
 
@@ -443,7 +451,7 @@ module AStar =
                 let paths = Heap<V2i, Path<Index * 'a, 'b>>(PathComparer.Instance)
                 paths.EnqueueOrDecrease(p0.position, p0)
 
-                let mutable delta = Unchecked.defaultof<IndexListDelta<'a>>
+                let mutable delta = Unchecked.defaultof<_>
                 let mutable fin = false
 
                 let mutable steps = 0
@@ -451,21 +459,22 @@ module AStar =
                     match stepTup differ target paths with
                     | ValueSome best ->
                         let path = best.path.ToList()
-                        let rec run (delta : IndexListDelta<'a>) (lastIndex : Index) (ops : list<Operation>) (l : list<Index * 'a>) (r : list<'b>) =
+                        let rec run (status : UpdateStatus) (delta : IndexListDelta<'a>) (lastIndex : Index) (ops : list<Operation>) (l : list<Index * 'a>) (r : list<'b>) =
                             match ops with
                             | [] ->
-                                delta
+                                struct(status, delta)
 
                             | Operation.Update :: ops ->
                                 match l with
                                 | (lid,l0) :: l1 ->
                                     match r with
                                     | r0 :: r1 -> 
-                                        if differ.TryUpdate(l0, r0) then
-                                            run delta lid ops l1 r1
+                                        let s = differ.TryUpdate(l0, r0)
+                                        if s <> UpdateStatus.Error then
+                                            run (max status s) delta lid ops l1 r1
                                         else
                                             differ.Destroy l0
-                                            run (IndexListDelta.add lid (Set (differ.Create r0)) delta) lid ops l1 r1
+                                            run UpdateStatus.Error (IndexListDelta.add lid (Set (differ.Create r0)) delta) lid ops l1 r1
                                     | [] ->
                                         failwith "empty list"
                                 | [] ->
@@ -477,11 +486,12 @@ module AStar =
                                 | (id, l0) :: l1 ->
                                     match r with
                                     | r0 :: r1 ->
-                                        if differ.TryUpdate(l0, r0) then
-                                            run delta id ops l1 r1
+                                        let s = differ.TryUpdate(l0, r0)
+                                        if s <> UpdateStatus.Error then
+                                            run (max status s) delta id ops l1 r1
                                         else
                                             differ.Destroy l0
-                                            run (IndexListDelta.add id (ElementOperation.Set (differ.Create r0)) delta) id ops
+                                            run UpdateStatus.Error (IndexListDelta.add id (ElementOperation.Set (differ.Create r0)) delta) id ops
                                                 l1 r1
                                     | [] ->
                                         failwith "bad"
@@ -492,7 +502,7 @@ module AStar =
                                 match l with
                                 | (id, l0) :: l1 ->
                                     differ.Destroy l0
-                                    run (IndexListDelta.add id ElementOperation.Remove delta) id ops
+                                    run UpdateStatus.Error (IndexListDelta.add id ElementOperation.Remove delta) id ops
                                         l1 r
                                 | [] ->
                                     failwith "bad"
@@ -504,7 +514,7 @@ module AStar =
                                         match l with
                                         | [] -> Index.after lastIndex
                                         | (n,_) :: _ -> Index.between lastIndex n
-                                    run (IndexListDelta.add id (ElementOperation.Set (differ.Create r0)) delta) id ops
+                                    run UpdateStatus.Error (IndexListDelta.add id (ElementOperation.Set (differ.Create r0)) delta) id ops
                                         l r1
                                 | [] ->
                                     failwith "bad"
@@ -512,7 +522,7 @@ module AStar =
                             | op :: _ ->
                                 failwithf "bad op: %A" op
 
-                        delta <- run IndexListDelta.empty Index.zero path l r
+                        delta <- run UpdateStatus.Nop IndexListDelta.empty Index.zero path l r
                         fin <- true
                     | ValueNone ->
                         ()
@@ -522,14 +532,17 @@ module AStar =
 
     module IndexList =
         let computeDeltaToList (l : IndexList<'a>) (r : list<'a>) =
-            astarIndexList ListDiffing.simple l (List.length r) r
+            let struct(_, a) = astarIndexList ListDiffing.simple l (List.length r) r
+            a
 
     type IndexList<'a> with
         static member ComputeDelta(l : IndexList<'a>, r : list<'a>) =
-            astarIndexList ListDiffing.simple l (List.length r) r
+            let struct(_, a) = astarIndexList ListDiffing.simple l (List.length r) r
+            a
 
         static member ComputeDelta(l : IndexList<'a>, r : list<'a>, rCount : int) =
-            astarIndexList ListDiffing.simple l rCount r
+            let struct(_, a) = astarIndexList ListDiffing.simple l rCount r
+            a
 
     type ListDiffing<'a, 'b> with
         member x.Update(l : IndexList<'a>, r : list<'b>, rCount : int) =

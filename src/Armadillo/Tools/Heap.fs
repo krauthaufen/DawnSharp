@@ -132,6 +132,22 @@ type Heap<'k, 'v when 'k : equality>(cmp : IComparer<'v>, capacity : int) =
 
         res.Value
 
+    /// Dequeues the smallest element.
+    member x.DequeueKey() =
+        if heap.Count = 0 then raise <| IndexOutOfRangeException "heap empty"
+
+        let last = heap.Count - 1
+        let res = heap.[0]
+        let le = heap.[last]
+        heap.RemoveAt last
+        dict.Remove res.Key |> ignore
+        if last > 0 then
+            heap.[0] <- le
+            le.Index <- 0
+            pushDown 0 le
+
+        res.Key
+
     /// Removes the element associated with key from the heap and returns true when it was successfully removed.
     member x.Remove(key : 'k) =
         match dict.TryRemove key with
@@ -178,3 +194,6 @@ type Heap<'k, 'v when 'k : equality>(cmp : IComparer<'v>, capacity : int) =
     new(cmp : IComparer<'v>) = Heap<'k, 'v>(cmp, 32)
     new(capacity : int) = Heap<'k, 'v>(Comparer<'v>.Default, capacity)
     new() = Heap<'k, 'v>(Comparer<'v>.Default, 32)
+
+
+    

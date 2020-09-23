@@ -121,77 +121,7 @@ type Sg =
 
 [<AutoOpen>]
 module Bla = 
-
-    type ConcList<'a> =
-        | Empty
-        | Single of 'a
-        | Leaf of list<'a>
-        | Concat of ConcList<'a> * ConcList<'a>
-
-        member x.ToList(b : ListBuilder<'a>) =
-            match x with
-            | Empty -> ()
-            | Single v -> b.Append v
-            | Leaf l -> b.Append l
-            | Concat(l, r) ->
-                l.ToList b
-                r.ToList b
-                
-
-        static member (+) (l : ConcList<'a>, r : ConcList<'a>) =
-            match l with
-            | Empty -> r
-            | l ->
-                match r with
-                | Empty -> l
-                | r -> Concat(l, r)
-
-    type SgBuilder() =
-        member inline x.Zero() =
-            struct (SgAttributes.Zero, Empty)
-            
-        member inline x.Yield(att : SgAttributes) =
-            struct (att, Empty)
-            
-        member inline x.Yield (t : SgAttributes.Trafo) =
-            struct ({ SgAttributes.Zero with trafo = Some t.Value }, Empty)
-            
-        member inline x.Yield (t : SgAttributes.VertexAttribute) =
-            struct ({ SgAttributes.Zero with vertexAttributes = MapExt.singleton t.Name t.Data }, Empty)
-
-        member inline x.Yield (t : SgAttributes.InstanceAttribute) =
-            struct ({ SgAttributes.Zero with instanceAttributes = MapExt.singleton t.Name t.Data }, Empty)
-            
-        member inline x.Yield (t : SgAttributes.Shader) =
-            struct ({ SgAttributes.Zero with shader = Some (FShade.Effect.compose t.Effects) }, Empty)
-            
-        member inline x.Yield (t : SgAttributes.Uniform) =
-            struct ({ SgAttributes.Zero with uniforms = MapExt.singleton t.Name t.Value }, Empty)
-        //member inline x.Yield(att : aval<SgAttributes>) =
-        //    struct (att, Empty)
-        
-        member inline x.For(s : seq<'a>, action : 'a -> _) =
-            let mutable a = SgAttributes.Zero
-            let mutable l = Empty
-            for e in s do
-                let struct (x,y) = action e
-                a <- a + x
-                l <- l + y
-            struct (a,l)
-            
-        member inline x.Yield(sg : Sg) =
-            struct (SgAttributes.Zero, Single sg)
-            
-        member inline x.Delay(r) = r()
-        
-        member inline x.Combine(struct (la, ls), struct (ra, rs)) =
-            struct (la + ra, ls + rs)
-                
-        member inline x.Run(struct (atts, children : ConcList<Sg>)) =
-            let b = ListBuilder()
-            children.ToList b
-            Group(atts, b.ToList())
-            
+  
     type Builder =
         val mutable public children : ListBuilder<Sg> //= ListBuilder()
         val mutable public atts : SgAttributes // = SgAttributes.Zero
@@ -204,59 +134,54 @@ module Bla =
             
         member inline x.Emit(a : SgAttributes.Trafo) =
             x.atts.trafo <- Some a.Value
-            //x.atts <- { x.atts with trafo = Some a.Value }
-            
+
         member inline x.Emit(a : SgAttributes.VertexAttribute) =
             x.atts.vertexAttributes <- MapExt.add a.Name a.Data x.atts.vertexAttributes
-            //x.atts <- { x.atts with vertexAttributes = MapExt.add a.Name a.Data atts.vertexAttributes }
             
         member inline x.Emit(a : SgAttributes.InstanceAttribute) =
             x.atts.instanceAttributes <- MapExt.add a.Name a.Data x.atts.instanceAttributes
-            //x.atts <- { x.atts with instanceAttributes = MapExt.add a.Name a.Data atts.instanceAttributes }
             
         member inline x.Emit(a : SgAttributes.Shader) =
             x.atts.shader <- Some (FShade.Effect.compose a.Effects)
-            //atts <- { atts with shader = Some (FShade.Effect.compose a.Effects) }
             
         member inline x.Emit(a : SgAttributes.Uniform) =
             x.atts.uniforms <- MapExt.add a.Name a.Value x.atts.uniforms
-            //atts <- { atts with uniforms = MapExt.add a.Name a.Value atts.uniforms }
 
         member inline x.Node() =
             Group(x.atts, x.children.ToList())
 
         new() = { atts = SgAttributes.Zero; children = ListBuilder() }
 
-    type SgBuilder2() =
+    type SgBuilder() =
 
         [<ThreadStatic; DefaultValue>]
         static val mutable private _b : Builder
 
         static member Builder
-            with get() = SgBuilder2._b
-            and set v = SgBuilder2._b <- v
+            with get() = SgBuilder._b
+            and set v = SgBuilder._b <- v
 
 
         member inline x.Zero() =
             ()
             
         member inline x.Yield(att : SgAttributes) =
-            SgBuilder2.Builder.Emit att
+            SgBuilder.Builder.Emit att
             
         member inline x.Yield (t : SgAttributes.Trafo) =
-            SgBuilder2.Builder.Emit t
+            SgBuilder.Builder.Emit t
             
         member inline x.Yield (t : SgAttributes.VertexAttribute) =
-            SgBuilder2.Builder.Emit t
+            SgBuilder.Builder.Emit t
 
         member inline x.Yield (t : SgAttributes.InstanceAttribute) =
-            SgBuilder2.Builder.Emit t
+            SgBuilder.Builder.Emit t
             
         member inline x.Yield (t : SgAttributes.Shader) =
-            SgBuilder2.Builder.Emit t
+            SgBuilder.Builder.Emit t
             
         member inline x.Yield (t : SgAttributes.Uniform) =
-            SgBuilder2.Builder.Emit t
+            SgBuilder.Builder.Emit t
 
         
         member inline x.For(s : seq<'a>, action : 'a -> _) =
@@ -264,7 +189,7 @@ module Bla =
                 action e
             
         member inline x.Yield(sg : Sg) =
-            SgBuilder2.Builder.Emit sg
+            SgBuilder.Builder.Emit sg
             
         member inline x.Delay(r) = 
             r
@@ -274,13 +199,15 @@ module Bla =
                 
         member inline x.Run(build) =
             let b = Builder()
-            let o = SgBuilder2.Builder
-            SgBuilder2.Builder <- b
-            build b
-            SgBuilder2.Builder <- o
-            b.Node()
+            let o = SgBuilder.Builder
+            try
+                SgBuilder.Builder <- b
+                build b
+                b.Node()
+            finally
+                SgBuilder.Builder <- o
 
-    let group = SgBuilder2()
+    let group = SgBuilder()
 
 module Diffing =
     open System.Collections.Generic
@@ -589,8 +516,6 @@ module Diffing =
                 ()
 
 
-
-
     [<AbstractClass>]
     type Component<'a>() =
         abstract member Mount : unit -> unit
@@ -610,9 +535,10 @@ module Diffing =
     and SgVisitor<'r> =
         abstract member Accept : Sg<'a> -> 'r
 
-    //type Component<'a> with
-    //    member x.New(value : 'a) =
-    //        Sg(x, value) :> Sg
+
+    let inline create< ^c, ^a when ^c : (static member New : UpdateState -> ^c) and ^c :> Component< ^a> > (value : 'a) =
+        let create s = (^c : (static member New : UpdateState -> ^c) (s)) :> Component< ^a >
+        Sg<'a>(create, value)
 
 
     let groupComponent :  UpdateState -> Component<struct (SgAttributes * list<Sg>)> = failwith ""
