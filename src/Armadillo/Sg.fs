@@ -133,197 +133,418 @@ module Program =
         abstract member WriteTimestamp : querySet : QuerySet * queryIndex : int -> unit
         abstract member EndPass : unit -> unit
 
-    type NativeRenderPassEncoderStream(ass : IAssemblerStream, pinning : IAdaptivePinning, encoder : nativeptr<RenderPassEncoderHandle>) =
-        static let lib = NativeLibrary.Load("dawn", typeof<Device>.Assembly, Unchecked.defaultof<_>)
-        static let wgpuRenderPassEncoderSetPipeline = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetPipeline")
-        static let wgpuRenderPassEncoderDraw = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDraw")
-        static let wgpuRenderPassEncoderDrawIndexed = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndexed")
-        static let wgpuRenderPassEncoderSetVertexBuffer = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetVertexBuffer")
-        static let wgpuRenderPassEncoderSetBindGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetBindGroup")
-        static let wgpuRenderPassEncoderDrawIndirect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndirect")
-        static let wgpuRenderPassEncoderDrawIndexedIndirect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndexedIndirect")
-        static let wgpuRenderPassEncoderExecuteBundles = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderExecuteBundles")
-        static let wgpuRenderPassEncoderInsertDebugMarker = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderInsertDebugMarker")
-        static let wgpuRenderPassEncoderPopDebugGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderPopDebugGroup")
-        static let wgpuRenderPassEncoderPushDebugGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderPushDebugGroup")
-        static let wgpuRenderPassEncoderSetStencilReference = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetStencilReference")
-        static let wgpuRenderPassEncoderSetBlendColor = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetBlendColor")
-        static let wgpuRenderPassEncoderSetViewport = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetViewport")
-        static let wgpuRenderPassEncoderSetScissorRect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetScissorRect")
-        static let wgpuRenderPassEncoderSetIndexBufferWithFormat = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetIndexBufferWithFormat")
-        static let wgpuRenderPassEncoderWriteTimestamp = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderWriteTimestamp")
-        static let wgpuRenderPassEncoderEndPass = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderEndPass")
+    [<AllowNullLiteral>]
+    type IRenderFragment =
+        inherit System.IDisposable
+        abstract member Next : IRenderFragment with get, set
+        abstract member Prev : IRenderFragment
+        abstract member Update : compile : (IRenderStream -> unit) -> unit
 
-        interface IRenderStream with
-            member x.Pinning = pinning
-            member x.Assembler = ass
+    type IRenderProgram =
+        inherit System.IDisposable
+        abstract member First : IRenderFragment with get, set
+        abstract member Create : compile : (IRenderStream -> unit) -> IRenderFragment
+        abstract member Run : RenderPassEncoder -> unit
 
-            member x.SetPipeline(p : RenderPipeline) =
-                ass.BeginCall(2)
-                ass.PushArg p.Handle.Handle
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetPipeline
-
-            member x.SetBindGroup(groupIndex : int, group : BindGroup, dynamicOffsets : int[]) =
-                let struct(pOffsets, offsetCount) = 
-                    if isNull dynamicOffsets then struct (NativePtr.zero, 0)
-                    else struct(pinning.Pin dynamicOffsets, dynamicOffsets.Length)
-                ass.BeginCall(5)
-                ass.PushArg (NativePtr.toNativeInt pOffsets)
-                ass.PushArg offsetCount
-                ass.PushArg (group.Handle.Handle)
-                ass.PushArg groupIndex
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetBindGroup
-
-            member x.Draw(info : DrawInfo) =
-                if info.indexed then
-                    ass.BeginCall(6)
-                    ass.PushArg info.firstInstance
-                    ass.PushArg info.baseVertex
-                    ass.PushArg info.first
-                    ass.PushArg info.instanceCount
-                    ass.PushArg info.count
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderDrawIndexed
-                else
-                    ass.BeginCall(5)
-                    ass.PushArg info.firstInstance
-                    ass.PushArg info.first
-                    ass.PushArg info.instanceCount
-                    ass.PushArg info.count
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderDraw
-
-            member x.SetVertexBuffer(slot : int, buffer : Buffer, offset : uint64, size : uint64) =
-                //let a = DawnRaw.wgpuRenderPassEncoderSetVertexBuffer
-                ass.BeginCall(5)
-                ass.PushArg (nativeint size)
-                ass.PushArg (nativeint offset)
-                ass.PushArg buffer.Handle.Handle
-                ass.PushArg slot
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetVertexBuffer
-
-            member x.DrawIndirect(indexed : bool, indirect : Buffer, offset : uint64) =
-                if indexed then
-                    ass.BeginCall(3)
-                    ass.PushArg (nativeint offset)
-                    ass.PushArg indirect.Handle.Handle
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderDrawIndexedIndirect
-                else
-                    ass.BeginCall(3)
-                    ass.PushArg (nativeint offset)
-                    ass.PushArg indirect.Handle.Handle
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderDrawIndirect
- 
-            member x.ExecuteBundles(bundles : RenderBundle[]) =
-                if not (isNull bundles) && bundles.Length > 0 then
-                    let handles = bundles |> Array.map (fun b -> b.Handle)
-                    let pHandles = pinning.Pin(handles)
-                    ass.BeginCall(3)
-                    ass.PushArg (NativePtr.toNativeInt pHandles)
-                    ass.PushArg (handles.Length)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderExecuteBundles
- 
-            member x.InsertDebugMarker (marker : string) =
-                let pStr =
-                    if isNull marker then
-                        NativePtr.zero
-                    else
-                        let arr = Array.zeroCreate (marker.Length + 1)
-                        System.Text.Encoding.ASCII.GetBytes(marker, 0, marker.Length, arr, 0) |> ignore
-                        pinning.Pin arr
-                ass.BeginCall(2)
-                ass.PushArg (NativePtr.toNativeInt pStr)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderInsertDebugMarker
-
-            member x.PopDebugGroup() =
-                ass.BeginCall(1)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderPopDebugGroup
-                
-            member x.PushDebugGroup(label : string) =
-                let pStr = 
-                    if isNull label then
-                        NativePtr.zero
-                    else
-                        let arr = Array.zeroCreate (label.Length + 1)
-                        System.Text.Encoding.ASCII.GetBytes(label, 0, label.Length, arr, 0) |> ignore
-                        pinning.Pin arr
-                ass.BeginCall(2)
-                ass.PushArg (NativePtr.toNativeInt pStr)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderPushDebugGroup
-                
-            member x.SetStencilReference (value : uint32) =
-                ass.BeginCall(2)
-                ass.PushArg (int value)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetStencilReference
-                
-            member x.SetBlendColor(color : C4f) =
-                let pColor = pinning.Pin [| { R = color.R; G = color.G; B = color.B; A = color.A } |]
-                ass.BeginCall(2)
-                ass.PushArg (NativePtr.toNativeInt pColor)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetBlendColor
-
-            member x.SetViewport(offset : V2f, size : V2f, depthRange : Range1f) =
-                ass.BeginCall(7)
-                ass.PushArg depthRange.Max
-                ass.PushArg depthRange.Min
-                ass.PushArg size.Y
-                ass.PushArg size.X
-                ass.PushArg offset.Y
-                ass.PushArg offset.X
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetViewport
-
-            member x.SetScissorRect(offset : V2i, size : V2i) =
-                ass.BeginCall(5)
-                ass.PushArg size.Y
-                ass.PushArg size.X
-                ass.PushArg offset.Y
-                ass.PushArg offset.X
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetScissorRect
-
-            member x.SetIndexBuffer(buffer : Buffer, format : IndexFormat, offset : uint64, size : uint64) =
-                ass.BeginCall(5)
-                ass.PushArg (nativeint size)
-                ass.PushArg (nativeint offset)
-                ass.PushArg (int format)
-                ass.PushArg (buffer.Handle.Handle)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderSetIndexBufferWithFormat
-
-            member x.WriteTimestamp(querySet : QuerySet, queryIndex : int) =
-                ass.BeginCall(3)
-                ass.PushArg queryIndex
-                ass.PushArg querySet.Handle.Handle
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderWriteTimestamp
-
-            member x.EndPass() =    
-                ass.BeginCall(1)
-                ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                ass.Call wgpuRenderPassEncoderEndPass
 
     module Bla = 
+        
+        type private NativeRenderPassEncoderStream(ass : IAssemblerStream, pinning : IAdaptivePinning, encoder : nativeptr<RenderPassEncoderHandle>) =
+            static let lib = NativeLibrary.Load("dawn", typeof<Device>.Assembly, Unchecked.defaultof<_>)
+            static let wgpuRenderPassEncoderSetPipeline = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetPipeline")
+            static let wgpuRenderPassEncoderDraw = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDraw")
+            static let wgpuRenderPassEncoderDrawIndexed = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndexed")
+            static let wgpuRenderPassEncoderSetVertexBuffer = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetVertexBuffer")
+            static let wgpuRenderPassEncoderSetBindGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetBindGroup")
+            static let wgpuRenderPassEncoderDrawIndirect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndirect")
+            static let wgpuRenderPassEncoderDrawIndexedIndirect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndexedIndirect")
+            static let wgpuRenderPassEncoderExecuteBundles = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderExecuteBundles")
+            static let wgpuRenderPassEncoderInsertDebugMarker = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderInsertDebugMarker")
+            static let wgpuRenderPassEncoderPopDebugGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderPopDebugGroup")
+            static let wgpuRenderPassEncoderPushDebugGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderPushDebugGroup")
+            static let wgpuRenderPassEncoderSetStencilReference = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetStencilReference")
+            static let wgpuRenderPassEncoderSetBlendColor = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetBlendColor")
+            static let wgpuRenderPassEncoderSetViewport = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetViewport")
+            static let wgpuRenderPassEncoderSetScissorRect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetScissorRect")
+            static let wgpuRenderPassEncoderSetIndexBufferWithFormat = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetIndexBufferWithFormat")
+            static let wgpuRenderPassEncoderWriteTimestamp = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderWriteTimestamp")
+            static let wgpuRenderPassEncoderEndPass = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderEndPass")
 
+            interface IRenderStream with
+                member x.Pinning = pinning
+                member x.Assembler = ass
+
+                member x.SetPipeline(p : RenderPipeline) =
+                    ass.BeginCall(2)
+                    ass.PushArg p.Handle.Handle
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetPipeline
+
+                member x.SetBindGroup(groupIndex : int, group : BindGroup, dynamicOffsets : int[]) =
+                    let struct(pOffsets, offsetCount) = 
+                        if isNull dynamicOffsets then struct (NativePtr.zero, 0)
+                        else struct(pinning.Pin dynamicOffsets, dynamicOffsets.Length)
+                    ass.BeginCall(5)
+                    ass.PushArg (NativePtr.toNativeInt pOffsets)
+                    ass.PushArg offsetCount
+                    ass.PushArg (group.Handle.Handle)
+                    ass.PushArg groupIndex
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetBindGroup
+
+                member x.Draw(info : DrawInfo) =
+                    if info.indexed then
+                        ass.BeginCall(6)
+                        ass.PushArg info.firstInstance
+                        ass.PushArg info.baseVertex
+                        ass.PushArg info.first
+                        ass.PushArg info.instanceCount
+                        ass.PushArg info.count
+                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                        ass.Call wgpuRenderPassEncoderDrawIndexed
+                    else
+                        ass.BeginCall(5)
+                        ass.PushArg info.firstInstance
+                        ass.PushArg info.first
+                        ass.PushArg info.instanceCount
+                        ass.PushArg info.count
+                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                        ass.Call wgpuRenderPassEncoderDraw
+
+                member x.SetVertexBuffer(slot : int, buffer : Buffer, offset : uint64, size : uint64) =
+                    //let a = DawnRaw.wgpuRenderPassEncoderSetVertexBuffer
+                    ass.BeginCall(5)
+                    ass.PushArg (nativeint size)
+                    ass.PushArg (nativeint offset)
+                    ass.PushArg buffer.Handle.Handle
+                    ass.PushArg slot
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetVertexBuffer
+
+                member x.DrawIndirect(indexed : bool, indirect : Buffer, offset : uint64) =
+                    if indexed then
+                        ass.BeginCall(3)
+                        ass.PushArg (nativeint offset)
+                        ass.PushArg indirect.Handle.Handle
+                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                        ass.Call wgpuRenderPassEncoderDrawIndexedIndirect
+                    else
+                        ass.BeginCall(3)
+                        ass.PushArg (nativeint offset)
+                        ass.PushArg indirect.Handle.Handle
+                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                        ass.Call wgpuRenderPassEncoderDrawIndirect
+ 
+                member x.ExecuteBundles(bundles : RenderBundle[]) =
+                    if not (isNull bundles) && bundles.Length > 0 then
+                        let handles = bundles |> Array.map (fun b -> b.Handle)
+                        let pHandles = pinning.Pin(handles)
+                        ass.BeginCall(3)
+                        ass.PushArg (NativePtr.toNativeInt pHandles)
+                        ass.PushArg (handles.Length)
+                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                        ass.Call wgpuRenderPassEncoderExecuteBundles
+ 
+                member x.InsertDebugMarker (marker : string) =
+                    let pStr =
+                        if isNull marker then
+                            NativePtr.zero
+                        else
+                            let arr = Array.zeroCreate (marker.Length + 1)
+                            System.Text.Encoding.ASCII.GetBytes(marker, 0, marker.Length, arr, 0) |> ignore
+                            pinning.Pin arr
+                    ass.BeginCall(2)
+                    ass.PushArg (NativePtr.toNativeInt pStr)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderInsertDebugMarker
+
+                member x.PopDebugGroup() =
+                    ass.BeginCall(1)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderPopDebugGroup
+                
+                member x.PushDebugGroup(label : string) =
+                    let pStr = 
+                        if isNull label then
+                            NativePtr.zero
+                        else
+                            let arr = Array.zeroCreate (label.Length + 1)
+                            System.Text.Encoding.ASCII.GetBytes(label, 0, label.Length, arr, 0) |> ignore
+                            pinning.Pin arr
+                    ass.BeginCall(2)
+                    ass.PushArg (NativePtr.toNativeInt pStr)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderPushDebugGroup
+                
+                member x.SetStencilReference (value : uint32) =
+                    ass.BeginCall(2)
+                    ass.PushArg (int value)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetStencilReference
+                
+                member x.SetBlendColor(color : C4f) =
+                    let pColor = pinning.Pin [| { R = color.R; G = color.G; B = color.B; A = color.A } |]
+                    ass.BeginCall(2)
+                    ass.PushArg (NativePtr.toNativeInt pColor)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetBlendColor
+
+                member x.SetViewport(offset : V2f, size : V2f, depthRange : Range1f) =
+                    ass.BeginCall(7)
+                    ass.PushArg depthRange.Max
+                    ass.PushArg depthRange.Min
+                    ass.PushArg size.Y
+                    ass.PushArg size.X
+                    ass.PushArg offset.Y
+                    ass.PushArg offset.X
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetViewport
+
+                member x.SetScissorRect(offset : V2i, size : V2i) =
+                    ass.BeginCall(5)
+                    ass.PushArg size.Y
+                    ass.PushArg size.X
+                    ass.PushArg offset.Y
+                    ass.PushArg offset.X
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetScissorRect
+
+                member x.SetIndexBuffer(buffer : Buffer, format : IndexFormat, offset : uint64, size : uint64) =
+                    ass.BeginCall(5)
+                    ass.PushArg (nativeint size)
+                    ass.PushArg (nativeint offset)
+                    ass.PushArg (int format)
+                    ass.PushArg (buffer.Handle.Handle)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderSetIndexBufferWithFormat
+
+                member x.WriteTimestamp(querySet : QuerySet, queryIndex : int) =
+                    ass.BeginCall(3)
+                    ass.PushArg queryIndex
+                    ass.PushArg querySet.Handle.Handle
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderWriteTimestamp
+
+                member x.EndPass() =    
+                    ass.BeginCall(1)
+                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
+                    ass.Call wgpuRenderPassEncoderEndPass
+
+        [<AllowNullLiteral>]
+        type private NativeRenderFragment(frag : ProgramFragment, encoder : nativeptr<RenderPassEncoderHandle>) =
+            
+            member x.Fragment =
+                frag
+
+            member x.Dispose() =
+                frag.Dispose()
+
+            member x.Prev =
+                if isNull frag.Prev then null
+                else new NativeRenderFragment(frag.Prev, encoder) :> IRenderFragment
+                
+            member x.Next
+                with get() = 
+                    if isNull frag.Next then null
+                    else new NativeRenderFragment(frag.Next, encoder) :> IRenderFragment
+                and set (n : IRenderFragment) =
+                    let n = n :?> NativeRenderFragment
+                    if isNull n then frag.Next <- null
+                    else frag.Next <- n.Fragment
+
+            member x.Update(compile : IRenderStream -> unit) =
+                frag.Mutate (fun ass pin ->
+                    let s = NativeRenderPassEncoderStream(ass, pin, encoder)
+                    compile s
+                )
+
+            interface IRenderFragment with
+                member x.Dispose() = x.Dispose()
+                member x.Next
+                    with get() = x.Next
+                    and set v = x.Next <- v
+
+                member x.Prev = x.Prev
+                member x.Update compile = x.Update compile
+
+        type private NativeRenderProgram() =
+            let program = new FragmentProgram()
+
+            let encoder = Marshal.AllocHGlobal sizeof<RenderPassEncoderHandle> |> NativePtr.ofNativeInt
+
+            member x.First 
+                with get() = 
+                    new NativeRenderFragment(program.First, encoder) :> IRenderFragment
+                and set (v : IRenderFragment) =
+                    if isNull v then
+                        program.First <- null
+                    else
+                        let v = v :?> NativeRenderFragment
+                        program.First <- v.Fragment
+
+            member x.Create(compile) =
+                let frag = program.NewFragment(fun ass pin -> compile(new NativeRenderPassEncoderStream(ass, pin, encoder) :> IRenderStream))
+                new NativeRenderFragment(frag, encoder) :> IRenderFragment
+
+            member x.Dispose() =
+                Marshal.FreeHGlobal (NativePtr.toNativeInt encoder)
+                program.Dispose()
+
+            member x.Run(enc : RenderPassEncoder) =
+                lock x (fun () ->
+                    NativePtr.write encoder enc.Handle
+                    program.Run()
+                )
+
+            interface IRenderProgram with
+                member x.Dispose() = x.Dispose()
+
+                member x.First
+                    with get() = x.First
+                    and set v = x.First <- v
+
+                member x.Create compile = x.Create compile
+
+                member x.Run encoder = x.Run encoder
+
+
+        type private ManagedRenderPassEncoderStream(store : System.Collections.Generic.List<RenderPassEncoder -> unit>) =
+            interface IRenderStream with
+                member x.Assembler = failwith ""
+                member x.Pinning = failwith ""
+
+                member x.SetPipeline(pipeline : RenderPipeline) =
+                    store.Add <| fun e -> e.SetPipeline pipeline
+                
+                member x.SetBindGroup(groupIndex : int, group : BindGroup, dynamicOffsets : int[]) =
+                    store.Add <| fun e -> e.SetBindGroup(groupIndex, group, dynamicOffsets)
+
+                member x.EndPass() =
+                    store.Add <| fun e -> e.EndPass()
+
+                member x.ExecuteBundles(bundles : RenderBundle[]) =
+                    store.Add <| fun e -> e.ExecuteBundles bundles
+
+                member x.InsertDebugMarker (marker : string) =
+                    store.Add <| fun e -> e.InsertDebugMarker marker
+
+                member x.PushDebugGroup (label : string) =
+                    store.Add <| fun e -> e.PushDebugGroup label
+
+                member x.SetBlendColor (color : C4f) =
+                    store.Add <| fun e -> e.SetBlendColor { R = color.R; G = color.G; B = color.B; A = color.A }
+
+                member x.PopDebugGroup() =
+                    store.Add <| fun e -> e.PopDebugGroup()
+
+                member x.WriteTimestamp(querySet : QuerySet, queryIndex : int) =
+                    store.Add <| fun e -> e.WriteTimestamp(querySet, queryIndex)
+
+                member x.SetIndexBuffer(a,b,c,d) =
+                    store.Add <| fun e -> e.SetIndexBufferWithFormat(a,b,c,d)
+                    
+                member x.SetScissorRect(o, s) =
+                    store.Add <| fun e -> e.SetScissorRect(o.X, o.Y, s.X, s.Y)
+
+                member x.SetViewport(o, s, r) =
+                    store.Add <| fun e -> e.SetViewport(o.X, o.Y, s.X, s.Y, r.Min, r.Max)
+                    
+                member x.SetStencilReference(ref) =
+                    store.Add <| fun e -> e.SetStencilReference(int ref)
+
+                member x.SetVertexBuffer(a, b, c, d) =
+                    store.Add <| fun e -> e.SetVertexBuffer(a, b, c, d)
+                    
+                member x.DrawIndirect(indexed : bool, buffer : Buffer, offset : uint64) =
+                    if indexed then
+                        store.Add <| fun e -> e.DrawIndexedIndirect(buffer, offset)
+                    else
+                        store.Add <| fun e -> e.DrawIndirect(buffer, offset)
+                        
+                member x.Draw(info : DrawInfo) =
+                    if info.indexed then
+                        store.Add <| fun e -> e.DrawIndexed(info.count, info.instanceCount, info.first, info.baseVertex, info.firstInstance)
+                    else
+                        store.Add <| fun e -> e.Draw(info.count, info.instanceCount, info.first, info.firstInstance)
+
+        [<AllowNullLiteral>]
+        type private ManagedRenderFragment() =
+            let mutable prev : ManagedRenderFragment = null
+            let mutable next : ManagedRenderFragment = null
+            let code = System.Collections.Generic.List<RenderPassEncoder -> unit>()
+
+            member x.Prev
+                with get() = prev
+                and set v = prev <- v
+
+            member x.Next
+                with get() = next
+                and set v = next <- v
+
+            member x.Run(enc : RenderPassEncoder) =
+                for a in code do a enc
+
+            interface IRenderFragment with
+                member x.Dispose() =
+                    if not (isNull prev) then prev.Next <- next
+                    if not (isNull next) then next.Prev <- prev
+                    prev <- null
+                    next <- null
+                    code.Clear()
+
+                member x.Next
+                    with get() = next :> IRenderFragment
+                    and set (n : IRenderFragment) =
+                        let n = n :?> ManagedRenderFragment
+                        next <- n
+                        if not (isNull n) then n.Prev <- x
+
+                member x.Prev = prev :> IRenderFragment
+
+                member x.Update(compile : IRenderStream -> unit) =
+                    code.Clear()
+                    compile (ManagedRenderPassEncoderStream(code) :> IRenderStream)
+
+        type private ManagedRenderProgram() =
+            let mutable first : ManagedRenderFragment = null
+
+            member x.First 
+                with get() = 
+                    first :> IRenderFragment
+                and set (v : IRenderFragment) =
+                    let v = v :?> ManagedRenderFragment
+                    first <- v
+
+            member x.Create(compile) =
+                new ManagedRenderFragment() :> IRenderFragment
+
+            member x.Dispose() =
+                first <- null
+
+            member x.Run(enc : RenderPassEncoder) =
+                let mutable c = first
+                while not (isNull c) do
+                    c.Run enc
+                    c <- c.Next
+
+            interface IRenderProgram with
+                member x.Dispose() = x.Dispose()
+
+                member x.First
+                    with get() = x.First
+                    and set v = x.First <- v
+
+                member x.Create compile = x.Create compile
+
+                member x.Run encoder = x.Run encoder
 
 
         [<AllowNullLiteral>]
-        type Block(parent : Block, env : FragmentProgram, wrap : IAssemblerStream -> IAdaptivePinning -> IRenderStream) =
+        type Block(parent : Block, env : IRenderProgram) =
             let mutable next : Block = null
             let mutable prev : Block = null
 
-            let mutable fragment : ProgramFragment = null
+            let mutable fragment : IRenderFragment = null
 
             let mutable first : Block = null
             let mutable last : Block = null
@@ -365,15 +586,21 @@ module Program =
 
             member x.LastFragment =
                 if isNull fragment then
-                    if isNull prev then parent.LastFragmentInPrev
-                    else prev.LastFragment
+                    if isNull last then
+                        if isNull prev then parent.LastFragmentInPrev
+                        else prev.LastFragment
+                    else
+                        last.LastFragment
                 else
                     fragment
                
             member x.FirstFragment =
                 if isNull fragment then
-                    if isNull next then parent.FirstFragmentInNext
-                    else next.FirstFragment
+                    if isNull first then
+                        if isNull next then parent.FirstFragmentInNext
+                        else next.FirstFragment
+                    else
+                        first.FirstFragment
                 else
                     fragment
    
@@ -433,7 +660,7 @@ module Program =
 
                 // empty or fragment
                 if isNull fragment then
-                    fragment <- env.NewFragment (fun s p -> action (wrap s p))
+                    fragment <- env.Create action
 
                     let p = x.LastFragmentInPrev
                     let n = x.FirstFragmentInNext
@@ -444,7 +671,7 @@ module Program =
                     | null -> env.First <- fragment
                     | p -> p.Next <- fragment
                 else
-                    fragment.Mutate (fun s p -> action (wrap s p))
+                    fragment.Update action
                     
 
             member x.InsertAfter(ref : Block) =
@@ -456,7 +683,7 @@ module Program =
                     fragment.Dispose()
                     fragment <- null
 
-                let p = new Block(x, env, wrap)
+                let p = new Block(x, env)
                 let l = if isNull ref then null else ref
                 let r = if isNull ref then first else ref.Next
 
@@ -496,23 +723,27 @@ module Program =
                 program.Dispose()
                 
         type Program() =
-            let fragmentPrgram = new FragmentProgram()
-            let encoder = Marshal.AllocHGlobal sizeof<RenderPassEncoderHandle>
-            let wrap = fun (ass : IAssemblerStream) (p : IAdaptivePinning) -> new NativeRenderPassEncoderStream(ass, p, NativePtr.ofNativeInt encoder) :> IRenderStream
-            let block = Block(null, fragmentPrgram, wrap)
+            let fragmentProgram = 
+                match System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture with
+                | Architecture.X64 -> 
+                    new NativeRenderProgram() :> IRenderProgram
+                | _ ->
+                    new ManagedRenderProgram() :> IRenderProgram
+
+            let block = Block(null, fragmentProgram)
 
             member x.Root =
                 block
 
             member x.Run(e : RenderPassEncoder) =
-                lock x (fun () ->
-                    if not (isNull e) then
-                        NativePtr.write (NativePtr.ofNativeInt encoder) e.Handle
+                fragmentProgram.Run e
 
-                    fragmentPrgram.Run()
-                )
+            member x.Dispose() =
+                fragmentProgram.Dispose()
 
-
+            interface System.IDisposable with
+                member x.Dispose() = x.Dispose()
+                
 
         let test() =
             
@@ -530,7 +761,7 @@ module Program =
             let c = print "c"
             let d = print "d"
 
-            let overall = Program()
+            let overall = new Program()
             let pp = overall.Root
 
             let p = pp.Append()
