@@ -1,4 +1,6 @@
 FSharp.Core
 GLSLangSharp
+FShade
 Aardvark.Base
 Aardvark.Base.FSharp
+Aardvark.Base.Runtime

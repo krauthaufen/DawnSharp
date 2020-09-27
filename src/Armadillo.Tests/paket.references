@@ -2,6 +2,7 @@ FSharp.Core
 GLSLangSharp
 Aardvark.Base
 Aardvark.Base.FSharp
+Aardvark.Base.Runtime
 Expecto
 Expecto.FsCheck
 Expecto.VisualStudio.TestAdapter

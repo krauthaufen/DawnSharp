@@ -2208,8 +2208,9 @@ open FSharp.Data.Adaptive
 
 
 [<EntryPoint; STAThread>]
-let main argv =   
-    Armadillo.Gubble.test()
+let main argv = 
+    //Armadillo.ComponentTest.run()
+    Armadillo.Program.Bla.test()
     //ComputeDeltaTests.validate()
     //ComputeDeltaTests.benchmark()
     exit 0

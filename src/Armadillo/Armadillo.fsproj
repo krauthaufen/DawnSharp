@@ -15,7 +15,12 @@
     <Compile Include="Tools\ListBuilder.fs" />
     <Compile Include="Tools\Heap.fs" />
     <Compile Include="Tools\ListDiff.fs" />
+    <Compile Include="ChangeableProgram.fs" />
     <Compile Include="Component.fs" />
+    <Compile Include="Sg.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DawnSharp\DawnSharp.fsproj" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>
