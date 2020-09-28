@@ -99,6 +99,9 @@ type DeviceTransferQueue(device : Device) =
     let upload = new MemoryManagement.ChunkedMemoryManager<Buffer>(uploadMem, 64n <<< 20)
     let download = new MemoryManagement.ChunkedMemoryManager<Buffer>(downloadMem, 64n <<< 20)
 
+    let u0 = upload.Alloc 256n
+    let d0 = download.Alloc 256n
+
     //member x.Download(src : Buffer, srcOffset : int64, dst : nativeint, size : nativeint) =
     //    use enc = device.CreateCommandEncoder()
     //    let b = download.Alloc(size)

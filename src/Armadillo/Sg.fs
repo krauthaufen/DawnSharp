@@ -1,65 +1,10 @@
 ﻿namespace Armadillo
 
+open System
 open FSharp.Data.Adaptive
 open Aardvark.Base
 open WebGPU
-
-#nowarn "9"
-
-
-type DrawInfo =
-    {
-        indexed : bool
-        mode : PrimitiveTopology
-        first : int
-        count : int
-        baseVertex : int
-        firstInstance : int
-        instanceCount : int
-    }
-
-[<Struct>]
-type BlendMode =
-    {
-        color       : BlendDescriptor
-        alpha       : BlendDescriptor
-        blendColor  : C4f
-    }
-
-    static member Default = { color = BlendDescriptor.Default; alpha = BlendDescriptor.Default; blendColor = C4f.Black }
-
-type DepthTestMode =
-    {
-        compare     : CompareFunction
-        write       : bool
-    }
-
-type StencilMode =
-    {
-        readMask    : uint32
-        writeMask   : uint32
-        front       : StencilStateFaceDescriptor
-        back        : StencilStateFaceDescriptor
-    }
-
-type BufferDescriptor =
-    | Data of Data
-    | Buffer of fmt : VertexFormat * buffer : Buffer * offset : nativeint * size : nativeint
-
-    //member x.IsBuffer =
-    //    match x with
-    //    | Buffer _ -> true
-    //    | _ -> false
-
-    member x.Size =
-        match x with
-        | Data d -> d.Size
-        | Buffer(_, _, _, s) -> s
-
-    member x.Format =
-        match x with
-        | Data d -> d.Format
-        | Buffer(f,_,_,_) -> f
+open Armadillo
 
 [<Struct>]
 type SgAttributes =
@@ -78,7 +23,6 @@ type SgAttributes =
         uniforms            : HashMap<string, obj>
     }
     
-
 module SgAttributes =
     let empty =
         {
@@ -96,1150 +40,536 @@ module SgAttributes =
             uniforms = HashMap.empty
         }
 
-type Sg =
-    | Render of info : DrawInfo
-    | RenderIndirect of count : int
-    | Group of attributes : SgAttributes * children : list<Sg>
-
-
-
-
-
-
-module Program = 
-    open System.Collections.Generic
-    open System.Runtime.InteropServices
-    open Aardvark.Base.Runtime
-    open Microsoft.FSharp.NativeInterop
-
-
-    type IRenderStream =
-        abstract member Pinning : IAdaptivePinning
-        abstract member Assembler : IAssemblerStream
-        abstract member SetPipeline : pipeline : RenderPipeline -> unit
-        abstract member SetBindGroup : groupIndex : int * group : BindGroup * dynamicOffsets : array<int> -> unit
-        abstract member Draw : draw : DrawInfo -> unit
-        abstract member SetVertexBuffer : slot : int * buffer : Buffer * offset : uint64 * size : uint64 -> unit
-        abstract member DrawIndirect : indexed : bool * indirect : Buffer * offset : uint64 -> unit
-        abstract member ExecuteBundles : bundles : RenderBundle[] -> unit
-        abstract member InsertDebugMarker : marker : string -> unit
-        abstract member PopDebugGroup : unit -> unit
-        abstract member PushDebugGroup : label : string -> unit
-        abstract member SetStencilReference : ref : uint32 -> unit
-        abstract member SetBlendColor : color : C4f -> unit
-        abstract member SetViewport : offset : V2f * size : V2f * depthRange : Range1f -> unit
-        abstract member SetScissorRect : offset : V2i * size : V2i -> unit
-        abstract member SetIndexBuffer : buffer : Buffer * format : IndexFormat * offset : uint64 * size : uint64 -> unit
-        abstract member WriteTimestamp : querySet : QuerySet * queryIndex : int -> unit
-        abstract member EndPass : unit -> unit
-
-    [<AllowNullLiteral>]
-    type IRenderFragment =
-        inherit System.IDisposable
-        abstract member Next : IRenderFragment with get, set
-        abstract member Prev : IRenderFragment
-        abstract member Update : compile : (IRenderStream -> unit) -> unit
-
-    type IRenderProgram =
-        inherit System.IDisposable
-        abstract member First : IRenderFragment with get, set
-        abstract member Create : compile : (IRenderStream -> unit) -> IRenderFragment
-        abstract member Run : RenderPassEncoder -> unit
-
-
-    module Bla = 
-        
-        type private NativeRenderPassEncoderStream(ass : IAssemblerStream, pinning : IAdaptivePinning, encoder : nativeptr<RenderPassEncoderHandle>) =
-            static let lib = NativeLibrary.Load("dawn", typeof<Device>.Assembly, Unchecked.defaultof<_>)
-            static let wgpuRenderPassEncoderSetPipeline = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetPipeline")
-            static let wgpuRenderPassEncoderDraw = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDraw")
-            static let wgpuRenderPassEncoderDrawIndexed = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndexed")
-            static let wgpuRenderPassEncoderSetVertexBuffer = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetVertexBuffer")
-            static let wgpuRenderPassEncoderSetBindGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetBindGroup")
-            static let wgpuRenderPassEncoderDrawIndirect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndirect")
-            static let wgpuRenderPassEncoderDrawIndexedIndirect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderDrawIndexedIndirect")
-            static let wgpuRenderPassEncoderExecuteBundles = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderExecuteBundles")
-            static let wgpuRenderPassEncoderInsertDebugMarker = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderInsertDebugMarker")
-            static let wgpuRenderPassEncoderPopDebugGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderPopDebugGroup")
-            static let wgpuRenderPassEncoderPushDebugGroup = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderPushDebugGroup")
-            static let wgpuRenderPassEncoderSetStencilReference = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetStencilReference")
-            static let wgpuRenderPassEncoderSetBlendColor = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetBlendColor")
-            static let wgpuRenderPassEncoderSetViewport = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetViewport")
-            static let wgpuRenderPassEncoderSetScissorRect = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetScissorRect")
-            static let wgpuRenderPassEncoderSetIndexBufferWithFormat = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderSetIndexBufferWithFormat")
-            static let wgpuRenderPassEncoderWriteTimestamp = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderWriteTimestamp")
-            static let wgpuRenderPassEncoderEndPass = NativeLibrary.GetExport(lib, "wgpuRenderPassEncoderEndPass")
-
-            interface IRenderStream with
-                member x.Pinning = pinning
-                member x.Assembler = ass
-
-                member x.SetPipeline(p : RenderPipeline) =
-                    ass.BeginCall(2)
-                    ass.PushArg p.Handle.Handle
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetPipeline
-
-                member x.SetBindGroup(groupIndex : int, group : BindGroup, dynamicOffsets : int[]) =
-                    let struct(pOffsets, offsetCount) = 
-                        if isNull dynamicOffsets then struct (NativePtr.zero, 0)
-                        else struct(pinning.Pin dynamicOffsets, dynamicOffsets.Length)
-                    ass.BeginCall(5)
-                    ass.PushArg (NativePtr.toNativeInt pOffsets)
-                    ass.PushArg offsetCount
-                    ass.PushArg (group.Handle.Handle)
-                    ass.PushArg groupIndex
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetBindGroup
-
-                member x.Draw(info : DrawInfo) =
-                    if info.indexed then
-                        ass.BeginCall(6)
-                        ass.PushArg info.firstInstance
-                        ass.PushArg info.baseVertex
-                        ass.PushArg info.first
-                        ass.PushArg info.instanceCount
-                        ass.PushArg info.count
-                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                        ass.Call wgpuRenderPassEncoderDrawIndexed
-                    else
-                        ass.BeginCall(5)
-                        ass.PushArg info.firstInstance
-                        ass.PushArg info.first
-                        ass.PushArg info.instanceCount
-                        ass.PushArg info.count
-                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                        ass.Call wgpuRenderPassEncoderDraw
-
-                member x.SetVertexBuffer(slot : int, buffer : Buffer, offset : uint64, size : uint64) =
-                    //let a = DawnRaw.wgpuRenderPassEncoderSetVertexBuffer
-                    ass.BeginCall(5)
-                    ass.PushArg (nativeint size)
-                    ass.PushArg (nativeint offset)
-                    ass.PushArg buffer.Handle.Handle
-                    ass.PushArg slot
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetVertexBuffer
-
-                member x.DrawIndirect(indexed : bool, indirect : Buffer, offset : uint64) =
-                    if indexed then
-                        ass.BeginCall(3)
-                        ass.PushArg (nativeint offset)
-                        ass.PushArg indirect.Handle.Handle
-                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                        ass.Call wgpuRenderPassEncoderDrawIndexedIndirect
-                    else
-                        ass.BeginCall(3)
-                        ass.PushArg (nativeint offset)
-                        ass.PushArg indirect.Handle.Handle
-                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                        ass.Call wgpuRenderPassEncoderDrawIndirect
- 
-                member x.ExecuteBundles(bundles : RenderBundle[]) =
-                    if not (isNull bundles) && bundles.Length > 0 then
-                        let handles = bundles |> Array.map (fun b -> b.Handle)
-                        let pHandles = pinning.Pin(handles)
-                        ass.BeginCall(3)
-                        ass.PushArg (NativePtr.toNativeInt pHandles)
-                        ass.PushArg (handles.Length)
-                        ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                        ass.Call wgpuRenderPassEncoderExecuteBundles
- 
-                member x.InsertDebugMarker (marker : string) =
-                    let pStr =
-                        if isNull marker then
-                            NativePtr.zero
-                        else
-                            let arr = Array.zeroCreate (marker.Length + 1)
-                            System.Text.Encoding.ASCII.GetBytes(marker, 0, marker.Length, arr, 0) |> ignore
-                            pinning.Pin arr
-                    ass.BeginCall(2)
-                    ass.PushArg (NativePtr.toNativeInt pStr)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderInsertDebugMarker
-
-                member x.PopDebugGroup() =
-                    ass.BeginCall(1)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderPopDebugGroup
-                
-                member x.PushDebugGroup(label : string) =
-                    let pStr = 
-                        if isNull label then
-                            NativePtr.zero
-                        else
-                            let arr = Array.zeroCreate (label.Length + 1)
-                            System.Text.Encoding.ASCII.GetBytes(label, 0, label.Length, arr, 0) |> ignore
-                            pinning.Pin arr
-                    ass.BeginCall(2)
-                    ass.PushArg (NativePtr.toNativeInt pStr)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderPushDebugGroup
-                
-                member x.SetStencilReference (value : uint32) =
-                    ass.BeginCall(2)
-                    ass.PushArg (int value)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetStencilReference
-                
-                member x.SetBlendColor(color : C4f) =
-                    let pColor = pinning.Pin [| { R = color.R; G = color.G; B = color.B; A = color.A } |]
-                    ass.BeginCall(2)
-                    ass.PushArg (NativePtr.toNativeInt pColor)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetBlendColor
-
-                member x.SetViewport(offset : V2f, size : V2f, depthRange : Range1f) =
-                    ass.BeginCall(7)
-                    ass.PushArg depthRange.Max
-                    ass.PushArg depthRange.Min
-                    ass.PushArg size.Y
-                    ass.PushArg size.X
-                    ass.PushArg offset.Y
-                    ass.PushArg offset.X
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetViewport
-
-                member x.SetScissorRect(offset : V2i, size : V2i) =
-                    ass.BeginCall(5)
-                    ass.PushArg size.Y
-                    ass.PushArg size.X
-                    ass.PushArg offset.Y
-                    ass.PushArg offset.X
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetScissorRect
-
-                member x.SetIndexBuffer(buffer : Buffer, format : IndexFormat, offset : uint64, size : uint64) =
-                    ass.BeginCall(5)
-                    ass.PushArg (nativeint size)
-                    ass.PushArg (nativeint offset)
-                    ass.PushArg (int format)
-                    ass.PushArg (buffer.Handle.Handle)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderSetIndexBufferWithFormat
-
-                member x.WriteTimestamp(querySet : QuerySet, queryIndex : int) =
-                    ass.BeginCall(3)
-                    ass.PushArg queryIndex
-                    ass.PushArg querySet.Handle.Handle
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderWriteTimestamp
-
-                member x.EndPass() =    
-                    ass.BeginCall(1)
-                    ass.PushPtrArg (NativePtr.toNativeInt encoder)
-                    ass.Call wgpuRenderPassEncoderEndPass
-
-        [<AllowNullLiteral>]
-        type private NativeRenderFragment(frag : ProgramFragment, encoder : nativeptr<RenderPassEncoderHandle>) =
-            
-            member x.Fragment =
-                frag
-
-            member x.Dispose() =
-                frag.Dispose()
-
-            member x.Prev =
-                if isNull frag.Prev then null
-                else new NativeRenderFragment(frag.Prev, encoder) :> IRenderFragment
-                
-            member x.Next
-                with get() = 
-                    if isNull frag.Next then null
-                    else new NativeRenderFragment(frag.Next, encoder) :> IRenderFragment
-                and set (n : IRenderFragment) =
-                    let n = n :?> NativeRenderFragment
-                    if isNull n then frag.Next <- null
-                    else frag.Next <- n.Fragment
-
-            member x.Update(compile : IRenderStream -> unit) =
-                frag.Mutate (fun ass pin ->
-                    let s = NativeRenderPassEncoderStream(ass, pin, encoder)
-                    compile s
-                )
-
-            interface IRenderFragment with
-                member x.Dispose() = x.Dispose()
-                member x.Next
-                    with get() = x.Next
-                    and set v = x.Next <- v
-
-                member x.Prev = x.Prev
-                member x.Update compile = x.Update compile
-
-        type private NativeRenderProgram() =
-            let program = new FragmentProgram()
-
-            let encoder = Marshal.AllocHGlobal sizeof<RenderPassEncoderHandle> |> NativePtr.ofNativeInt
-
-            member x.First 
-                with get() = 
-                    new NativeRenderFragment(program.First, encoder) :> IRenderFragment
-                and set (v : IRenderFragment) =
-                    if isNull v then
-                        program.First <- null
-                    else
-                        let v = v :?> NativeRenderFragment
-                        program.First <- v.Fragment
-
-            member x.Create(compile) =
-                let frag = program.NewFragment(fun ass pin -> compile(new NativeRenderPassEncoderStream(ass, pin, encoder) :> IRenderStream))
-                new NativeRenderFragment(frag, encoder) :> IRenderFragment
-
-            member x.Dispose() =
-                Marshal.FreeHGlobal (NativePtr.toNativeInt encoder)
-                program.Dispose()
-
-            member x.Run(enc : RenderPassEncoder) =
-                lock x (fun () ->
-                    NativePtr.write encoder enc.Handle
-                    program.Run()
-                )
-
-            interface IRenderProgram with
-                member x.Dispose() = x.Dispose()
-
-                member x.First
-                    with get() = x.First
-                    and set v = x.First <- v
-
-                member x.Create compile = x.Create compile
-
-                member x.Run encoder = x.Run encoder
-
-
-        type private ManagedRenderPassEncoderStream(store : System.Collections.Generic.List<RenderPassEncoder -> unit>) =
-            interface IRenderStream with
-                member x.Assembler = failwith ""
-                member x.Pinning = failwith ""
-
-                member x.SetPipeline(pipeline : RenderPipeline) =
-                    store.Add <| fun e -> e.SetPipeline pipeline
-                
-                member x.SetBindGroup(groupIndex : int, group : BindGroup, dynamicOffsets : int[]) =
-                    store.Add <| fun e -> e.SetBindGroup(groupIndex, group, dynamicOffsets)
-
-                member x.EndPass() =
-                    store.Add <| fun e -> e.EndPass()
-
-                member x.ExecuteBundles(bundles : RenderBundle[]) =
-                    store.Add <| fun e -> e.ExecuteBundles bundles
-
-                member x.InsertDebugMarker (marker : string) =
-                    store.Add <| fun e -> e.InsertDebugMarker marker
-
-                member x.PushDebugGroup (label : string) =
-                    store.Add <| fun e -> e.PushDebugGroup label
-
-                member x.SetBlendColor (color : C4f) =
-                    store.Add <| fun e -> e.SetBlendColor { R = color.R; G = color.G; B = color.B; A = color.A }
-
-                member x.PopDebugGroup() =
-                    store.Add <| fun e -> e.PopDebugGroup()
-
-                member x.WriteTimestamp(querySet : QuerySet, queryIndex : int) =
-                    store.Add <| fun e -> e.WriteTimestamp(querySet, queryIndex)
-
-                member x.SetIndexBuffer(a,b,c,d) =
-                    store.Add <| fun e -> e.SetIndexBufferWithFormat(a,b,c,d)
-                    
-                member x.SetScissorRect(o, s) =
-                    store.Add <| fun e -> e.SetScissorRect(o.X, o.Y, s.X, s.Y)
-
-                member x.SetViewport(o, s, r) =
-                    store.Add <| fun e -> e.SetViewport(o.X, o.Y, s.X, s.Y, r.Min, r.Max)
-                    
-                member x.SetStencilReference(ref) =
-                    store.Add <| fun e -> e.SetStencilReference(int ref)
-
-                member x.SetVertexBuffer(a, b, c, d) =
-                    store.Add <| fun e -> e.SetVertexBuffer(a, b, c, d)
-                    
-                member x.DrawIndirect(indexed : bool, buffer : Buffer, offset : uint64) =
-                    if indexed then
-                        store.Add <| fun e -> e.DrawIndexedIndirect(buffer, offset)
-                    else
-                        store.Add <| fun e -> e.DrawIndirect(buffer, offset)
-                        
-                member x.Draw(info : DrawInfo) =
-                    if info.indexed then
-                        store.Add <| fun e -> e.DrawIndexed(info.count, info.instanceCount, info.first, info.baseVertex, info.firstInstance)
-                    else
-                        store.Add <| fun e -> e.Draw(info.count, info.instanceCount, info.first, info.firstInstance)
-
-        [<AllowNullLiteral>]
-        type private ManagedRenderFragment() =
-            let mutable prev : ManagedRenderFragment = null
-            let mutable next : ManagedRenderFragment = null
-            let code = System.Collections.Generic.List<RenderPassEncoder -> unit>()
-
-            member x.Prev
-                with get() = prev
-                and set v = prev <- v
-
-            member x.Next
-                with get() = next
-                and set v = next <- v
-
-            member x.Run(enc : RenderPassEncoder) =
-                for a in code do a enc
-
-            interface IRenderFragment with
-                member x.Dispose() =
-                    if not (isNull prev) then prev.Next <- next
-                    if not (isNull next) then next.Prev <- prev
-                    prev <- null
-                    next <- null
-                    code.Clear()
-
-                member x.Next
-                    with get() = next :> IRenderFragment
-                    and set (n : IRenderFragment) =
-                        let n = n :?> ManagedRenderFragment
-                        next <- n
-                        if not (isNull n) then n.Prev <- x
-
-                member x.Prev = prev :> IRenderFragment
-
-                member x.Update(compile : IRenderStream -> unit) =
-                    code.Clear()
-                    compile (ManagedRenderPassEncoderStream(code) :> IRenderStream)
-
-        type private ManagedRenderProgram() =
-            let mutable first : ManagedRenderFragment = null
-
-            member x.First 
-                with get() = 
-                    first :> IRenderFragment
-                and set (v : IRenderFragment) =
-                    let v = v :?> ManagedRenderFragment
-                    first <- v
-
-            member x.Create(compile) =
-                new ManagedRenderFragment() :> IRenderFragment
-
-            member x.Dispose() =
-                first <- null
-
-            member x.Run(enc : RenderPassEncoder) =
-                let mutable c = first
-                while not (isNull c) do
-                    c.Run enc
-                    c <- c.Next
-
-            interface IRenderProgram with
-                member x.Dispose() = x.Dispose()
-
-                member x.First
-                    with get() = x.First
-                    and set v = x.First <- v
-
-                member x.Create compile = x.Create compile
-
-                member x.Run encoder = x.Run encoder
-
-
-        [<AllowNullLiteral>]
-        type Block(parent : Block, env : IRenderProgram) =
-            let mutable next : Block = null
-            let mutable prev : Block = null
-
-            let mutable fragment : IRenderFragment = null
-
-            let mutable first : Block = null
-            let mutable last : Block = null
-            
-            member x.Fragment
-                with get() = fragment
-                and set p = fragment <- p
-                
-            member x.Prev
-                with get() = prev
-                and set p = prev <- p
-                
-            member x.Next
-                with get() = next
-                and set p = next <- p
-                
-            member x.First
-                with get() = first
-                and set p = first <- p
-                
-            member x.Last
-                with get() = last
-                and set p = last <- p
-
-
-            member x.LastFragmentInPrev =
-                if isNull prev then
-                    if isNull parent then null
-                    else parent.LastFragmentInPrev
-                else
-                    prev.LastFragment
-
-            member x.FirstFragmentInNext =
-                if isNull next then
-                    if isNull parent then null
-                    else parent.FirstFragmentInNext
-                else
-                    next.FirstFragment
-
-            member x.LastFragment =
-                if isNull fragment then
-                    if isNull last then
-                        if isNull prev then parent.LastFragmentInPrev
-                        else prev.LastFragment
-                    else
-                        last.LastFragment
-                else
-                    fragment
-               
-            member x.FirstFragment =
-                if isNull fragment then
-                    if isNull first then
-                        if isNull next then parent.FirstFragmentInNext
-                        else next.FirstFragment
-                    else
-                        first.FirstFragment
-                else
-                    fragment
-   
-            member x.Dispose() =
-                if not (isNull fragment) then 
-                    fragment.Dispose()
-                    fragment <- null
-
-                if not (isNull first) then
-                    let l = first.Prev
-                    let r = last.Next
-
-                    if isNull l then ()
-                    else l.Next <- r
-                    
-                    if isNull r then ()
-                    else r.Prev <- l
-
-                    first.Prev <- null
-                    last.Next <- null
-
-                    let mutable c = first
-                    while not (isNull c) do
-                        let n = c.Next
-                        c.Dispose()
-                        c <- n
-                    first <- null
-                    last <- null
-
-
-                if not (isNull prev) then prev.Next <- next
-                elif not (isNull parent) then parent.First <- next
-
-                if not (isNull next) then next.Prev <- prev
-                elif not (isNull parent) then parent.Last <- prev
-
-                prev <- null
-                next <- null
-
-            member x.Update(action : IRenderStream -> unit) =
-                if not (isNull first) then    
-                    // clear all child-programs
-                    let l = first.Prev
-                    let r = last.Next
-                    if not (isNull l) then l.Next <- r
-                    if not (isNull r) then r.Prev <- l
-                    first.Prev <- null
-                    last.Next <- null
-
-                    let mutable c = first
-                    while not (isNull c) do
-                        let n = c.Next
-                        c.Dispose()
-                        c <- n
-                    first <- null
-                    last <- null
-
-                // empty or fragment
-                if isNull fragment then
-                    fragment <- env.Create action
-
-                    let p = x.LastFragmentInPrev
-                    let n = x.FirstFragmentInNext
-
-                    fragment.Next <- n
-
-                    match p with
-                    | null -> env.First <- fragment
-                    | p -> p.Next <- fragment
-                else
-                    fragment.Update action
-                    
-
-            member x.InsertAfter(ref : Block) =
-                if not (isNull fragment) then
-                    let p = fragment.Prev
-                    let n = fragment.Next
-                    if isNull p then env.First <- n
-                    else p.Next <- n
-                    fragment.Dispose()
-                    fragment <- null
-
-                let p = new Block(x, env)
-                let l = if isNull ref then null else ref
-                let r = if isNull ref then first else ref.Next
-
-                p.Prev <- l
-                p.Next <- r
-                if not (isNull l) then l.Next <- p
-                if not (isNull r) then r.Prev <- p
-
-                if isNull first then first <- p
-                if isNull last || ref = last then last <- p
-                p
-                
-            member x.InsertBefore(ref : Block) =
-                if isNull ref then 
-                    x.Append()
-                else
-                    x.InsertAfter(ref.Prev)
-
-            member x.Append() =
-                x.InsertAfter(last)
-
-            member x.Prepend() =
-                x.InsertAfter(null)
-
-            member x.Remove(program : Block) =
-                let p = program.Prev
-                let n = program.Next
-
-                if isNull p then first <- n
-                else p.Next <- n
-
-                if isNull n then last <- p
-                else n.Prev <- p
-
-                program.Prev <- null
-                program.Next <- null
-                program.Dispose()
-                
-        type Program() =
-            let fragmentProgram = 
-                match System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture with
-                | Architecture.X64 -> 
-                    new NativeRenderProgram() :> IRenderProgram
-                | _ ->
-                    new ManagedRenderProgram() :> IRenderProgram
-
-            let block = Block(null, fragmentProgram)
-
-            member x.Root =
-                block
-
-            member x.Run(e : RenderPassEncoder) =
-                fragmentProgram.Run e
-
-            member x.Dispose() =
-                fragmentProgram.Dispose()
-
-            interface System.IDisposable with
-                member x.Dispose() = x.Dispose()
-                
-
-        let test() =
-            
-            let pin (action : unit -> unit) =
-                let del = System.Action(action)
-                let gc = GCHandle.Alloc(del)
-                Marshal.GetFunctionPointerForDelegate del
-
-            let print (str : string) =
-                pin (fun () -> Log.line "%s" str)
-
-
-            let a = print "a"
-            let b = print "b"
-            let c = print "c"
-            let d = print "d"
-
-            let overall = new Program()
-            let pp = overall.Root
-
-            let p = pp.Append()
-            let p0 = p.Append()
-            let p1 = p.Append()
-            let p2 = p.Append()
-
-            p2.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(c)    
-            )
-            
-            p1.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(b)    
-            )
-
-            p0.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(a)    
-            )
-            
-            
-            let enc : RenderPassEncoder = null
-
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-
-
-            let p6 = p.InsertAfter(p0)
-            p6.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(b)    
-            )
-
-            
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-
-
-            p1.Dispose()
-            
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-
-            let p3 = p.Append()
-            let p30 = p3.Append()
-            let p31 = p3.Append()
-
-            p31.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(d)    
-            )
-            
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-
-            
-            p30.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(b)    
-            )
-            
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-
-            p.Dispose()
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-
-            
-            let p = pp.Append()
-            p.Update(fun s -> 
-                let s = s.Assembler
-                s.BeginCall 0
-                s.Call(a)   
-                s.BeginCall 0
-                s.Call(b)    
-            )
-            Log.start "run"
-            overall.Run enc
-            Log.stop()
-            
-
-
-            exit 0
-
-
-
-
-
-
-
-
-    type Command =
-        abstract member Run : RenderPassEncoder -> unit
-
-
-    [<AllowNullLiteral>]
-    type Node = 
-        val mutable public Command : Command
-        val mutable public Next : Node
-        val mutable public Prev : Node
-
-        new(c) = { Command = c; Prev = null; Next = null }
-        
-    [<AllowNullLiteral>]
-    type Program2(parent : Program2, globalFirst : ref<Node>, globalLast : ref<Node>) =
-        static let emptyCmd = { new Command with member x.Run _ = () }
-
-        let mutable prev : obj = null
-        let mutable next : obj = null
-
-        let mutable first : Node = null
-        let mutable last : Node = null
-        
-        let mutable firstChild : Program2 = null
-        let mutable lastChild : Program2 = null
-        
-        let mutable firstKind = 0
-        let mutable lastKind = 0
-
-        member x.Clear() =
-            if lastKind <> 0 then
-                let (l, r) = 
-                    match firstKind, lastKind with
-                    | 1, 1 ->
-                        let l = first.Prev
-                        let r = last.Next
-                        l, r
-                    | 1, 2 ->
-                        let l = first.Prev
-                        let r = lastChild.RightAnchor
-                        l, r
-                    | 2, 1 ->
-                        let l = firstChild.LeftAnchor
-                        let r = last
-                        l, r
-                    | _, _ ->
-                        let l = firstChild.LeftAnchor
-                        let r = lastChild.RightAnchor
-                        l, r
-
-                if isNull r then globalLast := l
-                else r.Prev <- l
-                if isNull l then globalFirst := r
-                else l.Next <- r
-
-                first <- null
-                last <- null
-                firstChild <- null
-                lastChild <- null
-                firstKind <- 0
-                lastKind <- 0
-
-        member x.Prev
-            with get(): obj = prev
-            and set (p: obj) = prev <- p
-            
-        member x.Next 
-            with get(): obj = next
-            and set (p: obj) = next <- p
-
-   
-        member x.FirstChild
-            with get() = firstChild
-            and set p = firstChild <- p
-            
-        member x.LastChild
-            with get() = lastChild
-            and set p = lastChild <- p
-
-   
-        member x.First
-            with get() = first
-            and set p = first <- p
-            
-        member x.Last
-            with get() = last
-            and set p = last <- p
-
-        member x.LastNode =
-            match lastKind with
-            | 0 ->
-                match prev with
-                | null ->
-                    if isNull parent then null
-                    else parent.LeftAnchor
-                | :? Node as n ->
-                    n
-                | :? Program2 as p ->
-                    p.LastNode
-                | _ -> 
-                    failwith ""
-            | 1 ->
-                last
-            | _ ->
-                lastChild.LastNode
-
-        member x.FirstNode =
-            match firstKind with
-            | 0 ->
-                match next with
-                | null -> 
-                    if isNull parent then null
-                    else parent.RightAnchor
-                | :? Node as next ->
-                    next
-                | :? Program2 as next ->
-                    next.FirstNode
-                | _ -> failwith ""
-            | 1 ->
-                first
-            | _ ->
-                firstChild.FirstNode
-
-        member x.LeftAnchor =
-            match prev with
-            | null -> 
-                if isNull parent then null
-                else parent.LeftAnchor
-            | :? Program2 as prev ->
-                prev.LastNode
-            | :? Node as node ->
-                node
-            | _ ->
-                failwith ""
-                
-        member x.RightAnchor =
-            match next with
-            | null ->
-                if isNull parent then null
-                else parent.RightAnchor
-            | :? Program2 as next ->
-                next.FirstNode
-            | :? Node as node ->
-                node
-            | _ ->
-                failwith ""
-
-        member x.Append(cmd : Command) =
-            let n = Node cmd
-
-            match lastKind with
-            | 0 ->  
-                assert(isNull last)
-                assert(isNull lastChild)
-                first <- n
-                last <- n
-
-                let p = x.LeftAnchor
-                if isNull p then
-                    globalFirst := n
-                else
-                    n.Next <- p.Next
-                    if isNull p.Next then globalLast := n
-                    else p.Next.Prev <- n
-
-                    p.Next <- n
-                    n.Prev <- p
-
-                firstKind <- 1
-                lastKind <- 1
-
-            | 1 -> 
-                assert( not (isNull last) )
-                n.Prev <- last
-                n.Next <- last.Next
-                if isNull last.Next then globalLast := n
-                else last.Next.Prev <- n
-                last.Next <- n
-                last <- n
-                lastKind <- 1
-            | _ (* 2 *) ->
-                assert( not (isNull lastChild) )
-                let p = lastChild.LastNode
-
-                lastChild.Next <- n
-
-                n.Prev <- p
-                n.Next <- p.Next
-                if isNull p.Next then globalLast := n
-                else p.Next.Prev <- n
-                p.Next <- n
-
-                last <- n
-                lastKind <- 1
-               
-               
-        member x.NewProgram() =
-            let p = Program2(x, globalFirst, globalLast)
-
-            match lastKind with
-            | 0 ->  
-                firstChild <- p
-                lastChild <- p
-                firstKind <- 2
-                lastKind <- 2
-
-            | 1 ->
-                p.Prev <- last
-                lastChild <- p
-                lastKind <- 2
-            | _ ->  
-                lastChild.Next <- p
-                p.Prev <- lastChild
-                lastChild <- p
-                lastKind <- 2
-                
-            p
-                
-
-        member x.Run(e) =
-            let mutable c = !globalFirst 
-            while not (isNull c) do
-                c.Command.Run e
-                c <- c.Next
-       
-
-        new() = Program2(null, ref null, ref null)
-
-
-    type Program(actions : SortedSetExt<struct(Index * Command)>, minIndex : Index, maxIndex : Index) =
-        static let tupleComparer =
-            let indexComparer = Comparer<Index>.Default
-            { new IComparer<struct(Index * Command)> with
-                member x.Compare(struct(l,_), struct(r,_)) =
-                    indexComparer.Compare(l, r)
-            }
-
-        let mutable lastIndex = minIndex
-
-        let newIndex() =
-            let id = 
-                if maxIndex = Index.zero then Index.after lastIndex
-                else Index.between lastIndex maxIndex
-            lastIndex <- id
-            id
-                
-        member x.SubProgram() =
-            let id0 = newIndex()
-            let id1 = newIndex()
-            Program(actions.GetViewBetween(struct(id0, Unchecked.defaultof<_>), struct(id1, Unchecked.defaultof<_>)), id0, id1)
-
-        member x.Append(cmd : Command) =
-            let id = newIndex()
-            actions.Add(struct(id, cmd)) |> ignore
-
-        member x.Run(e : RenderPassEncoder) =
-            for struct(_,a) in actions do
-                a.Run e
-
-        member x.Set(s : #seq<Command>) =
-            let eo = Array.zeroCreate actions.Count
-            actions.CopyTo(eo)
-            use en = (s :> seq<_>).GetEnumerator()
-            
-            let mutable oi = 0
-
-            while oi < eo.Length && en.MoveNext() do
-                let o = eo.[oi]
-                let struct(oid,_) = o
-                actions.Remove o |> ignore
-                actions.Add(struct(oid, en.Current)) |> ignore
-                oi <- oi + 1
-            
-            while oi < eo.Length do
-                actions.Remove eo.[oi] |> ignore
-                
-                 
-            while en.MoveNext() do
-                let id = newIndex()
-                actions.Add(struct(id, en.Current)) |> ignore
-                
-
-        member x.Clear() =
-            actions.Clear()
-            lastIndex <- minIndex
-
-        new() = Program(SortedSetExt(tupleComparer), Index.zero, Index.zero)
-
-
-    type Program2 with
-        member x.Print str =
-            x.Append { new Command with
-                member x.Run _ = Log.line "%s" str
-            }
-
-    let test() =
+type UpdateState =
+    {
+        outputFormats   : TextureFormat[]
+        outputs         : Map<string, (Type * int)>
+        device          : Device
+    }
+
+type BufferPromise(state : UpdateState, usage : BufferUsage, data : BufferDescriptor) =
     
-        let cmd (action : unit -> unit) =
-            { new Command with
-                member x.Run _ = action()
+    let mutable cache : option<Buffer * uint64 * uint64> = None
+    
+    member x.Data = data
+
+    member x.Update(newData : BufferDescriptor) =
+        if newData = data then
+            x
+        else
+            BufferPromise(state, usage, newData)
+
+    member x.Acquire() =
+        match cache with
+        | Some(buf, off, size) when buf.ReferenceCount > 0 ->
+            try 
+                printfn "reuse buffer"
+                (buf.Clone(), off, size)
+            with :? System.ObjectDisposedException ->
+                cache <- None
+                x.Acquire()
+        | _ ->
+            match data with
+            | BufferDescriptor.Data data ->                 
+                let buffer = 
+                    state.device.CreateBuffer {
+                        Label = null
+                        Usage = usage
+                        Size = uint64 data.Size
+                        MappedAtCreation = false
+                    }
+                buffer.Upload(data)
+                printfn "create buffer %A" buffer.Handle.Handle
+                let tup = (buffer, 0UL, uint64 data.Size)
+                cache <- Some tup
+                tup
+
+            | BufferDescriptor.Buffer(fmt, buf, off, size) ->
+                (buf.Clone(), uint64 off, uint64 size)
+
+type ShaderPromise(state : UpdateState, effects : list<FShade.Effect>) =
+    
+    let glsl = 
+        let cfg : FShade.EffectConfig =
+            {
+                FShade.EffectConfig.depthRange = Range1d(0.0, 1.0)
+                FShade.EffectConfig.flipHandedness = false
+                FShade.EffectConfig.lastStage = FShade.ShaderStage.Fragment
+                FShade.EffectConfig.outputs = state.outputs
             }
-        let p = Program2()
 
-        p.Print "before A"
-        let a = p.NewProgram()
-        p.Print "after A"
-        
-        a.Print "before AA"
-        let aa = a.NewProgram()
-        a.Print "after AA"
-        
-        aa.Print "before AAA"
-        let aaa = aa.NewProgram()
-        aa.Print "after AAA"
-        
-        p.Print "before B"
-        let b = p.NewProgram()
-        p.Print "after B"
+        let backend = FShade.Backends.glsl430
+        effects
+        |> FShade.Effect.compose
+        |> FShade.Effect.toModule cfg
+        |> FShade.Imperative.ModuleCompiler.compile backend
+        |> FShade.GLSL.Assembler.assemble backend
+
+    let mutable cache : option<ShaderModule * ShaderModule> = None
+
+    member x.Interface = glsl.iface
+
+    member x.Update(newEffects : list<FShade.Effect>) =
+        if effects = newEffects then
+            x
+        else
+            ShaderPromise(state, newEffects)
+
+    member x.Acquire() =    
+        match cache with
+        | Some (vs, fs) when vs.ReferenceCount > 0 && fs.ReferenceCount > 0 ->
+            try 
+                printfn "reuse shader"
+                (vs.Clone(), fs.Clone())
+            with :? System.ObjectDisposedException ->
+                cache <- None
+                x.Acquire()
+        | _ -> 
+            let vs = 
+                state.device.CreateGLSLShaderModule {
+                    Label = null
+                    Code = glsl.code
+                    Defines = ["Vertex"]
+                    EntryPoint = "main"
+                    ShaderStage = ShaderStage.Vertex
+                }
+
+            let fs = 
+                state.device.CreateGLSLShaderModule {
+                    Label = null
+                    Code = glsl.code
+                    Defines = ["Fragment"]
+                    EntryPoint = "main"
+                    ShaderStage = ShaderStage.Fragment
+                }
+            printfn "create shader"
+
+            cache <- Some (vs, fs)
+            (vs, fs)
+
+type PipelinePromise(state : UpdateState, shader : ShaderPromise, vertexBuffers : HashMap<string, VertexFormat>, instanceBuffers : HashMap<string, VertexFormat>) =
+    let mutable cache : HashMap<PrimitiveTopology, ShaderModule * ShaderModule * RenderPipeline> = HashMap.empty
+
+    member x.Interface = shader.Interface
+
+    member x.Update(newShader : ShaderPromise, newVertexBuffers : HashMap<string, VertexFormat>, newInstanceBuffers : HashMap<string, VertexFormat>) =
+        if newShader = shader && newVertexBuffers = vertexBuffers && newInstanceBuffers = instanceBuffers then
+            x
+        else
+            PipelinePromise(state, newShader, newVertexBuffers, newInstanceBuffers)
+
+    member x.Acquire(top : PrimitiveTopology) =
+        match HashMap.tryFind top cache with
+        | Some (vs,fs,p) when vs.ReferenceCount > 0 && fs.ReferenceCount > 0 && p.ReferenceCount > 0 ->
+            try 
+                printfn "reuse pipeline"
+                vs.Clone(), fs.Clone(), p.Clone()
+            with :? System.ObjectDisposedException -> 
+                cache <- HashMap.remove top cache
+                x.Acquire top
+        | _ ->
+
+            let mutable groups : MapExt<int, MapExt<int, BindGroupLayoutEntry>> = MapExt.empty
+
+            // TODO: StorageBuffers / Images / etc.
+
+            for (KeyValue(_name, block)) in shader.Interface.uniformBuffers do
+                let entry : BindGroupLayoutEntry =
+                    {
+                        Binding = block.ubBinding
+                        Visibility = ShaderStage.Vertex ||| ShaderStage.Fragment
+                        Type = BindingType.UniformBuffer
+                        HasDynamicOffset = false
+                        MinBufferBindingSize = uint64 block.ubSize
+                        Multisampled = false
+                        ViewDimension = TextureViewDimension.Undefined
+                        TextureComponentType = TextureComponentType.Float
+                        StorageTextureFormat = TextureFormat.Undefined
+                    }
+
+                groups <-
+                    groups |> MapExt.alter block.ubSet (function
+                        | Some o -> MapExt.add block.ubBinding entry o |> Some
+                        | None -> MapExt.singleton block.ubBinding entry |> Some
+                    )
+
+            for (KeyValue(_name, sammy)) in shader.Interface.samplers do
+                let arr = sammy.samplerType.isArray
+                let dim =
+                    match sammy.samplerType.dimension with
+                    | FShade.SamplerDimension.Sampler1d ->  
+                        if arr then failwith ""
+                        else TextureViewDimension.D1D
+                    | FShade.SamplerDimension.Sampler2d -> 
+                        if arr then TextureViewDimension.D2DArray
+                        else TextureViewDimension.D2D
+                    | FShade.SamplerDimension.Sampler3d -> 
+                        if arr then failwith ""
+                        else TextureViewDimension.D3D
+                    | FShade.SamplerDimension.SamplerCube -> 
+                        if arr then TextureViewDimension.CubeArray
+                        else TextureViewDimension.Cube
+                    | _ ->
+                        failwith ""
+
+                let rec resultType (t : FShade.GLSL.GLSLType) = 
+                    match t with
+                    | FShade.GLSL.Int(true,_) -> TextureComponentType.Sint
+                    | FShade.GLSL.Int(false,_) -> TextureComponentType.Uint
+                    | FShade.GLSL.Float _ -> TextureComponentType.Float
+
+                    | FShade.GLSL.Vec(_, t) -> resultType t
+                    | FShade.GLSL.Mat(_, _, t) -> resultType t
+
+                    | _ -> failwith ""
+
+                let entry : BindGroupLayoutEntry =
+                    {
+                        Binding = sammy.samplerBinding
+                        Visibility = ShaderStage.Vertex ||| ShaderStage.Fragment
+                        Type = BindingType.SampledTexture
+                        HasDynamicOffset = false
+                        MinBufferBindingSize = 0UL
+                        Multisampled = sammy.samplerType.isMS
+                        ViewDimension = dim
+                        TextureComponentType = resultType sammy.samplerType.valueType
+                        StorageTextureFormat = TextureFormat.Undefined
+                    }
+                
+                groups <-
+                    groups |> MapExt.alter sammy.samplerSet (function
+                        | Some o -> MapExt.add sammy.samplerBinding entry o |> Some
+                        | None -> MapExt.singleton sammy.samplerBinding entry |> Some
+                    )
+
+            let groups = 
+                groups |> MapExt.map (fun _ elements ->
+                    let arr = 
+                        elements |> MapExt.toArray |> Array.map (fun (binding, elem) ->
+                            // TODO: sparse????
+                            elem
+                        )
+                    state.device.CreateBindGroupLayout {
+                        Label = null
+                        Entries = arr
+                    }
+                )
+
+            let layout =
+                state.device.CreatePipelineLayout {
+                    Label = null
+                    BindGroupLayouts =
+                        groups |> MapExt.toArray |> Array.map (fun (binding, elem) ->
+                            // TODO: sparse????
+                            elem
+                        )
+                }
+
+            let (vs, fs) = shader.Acquire()
 
 
-        aaa.Append(cmd <| fun () -> Log.line "AAA")
-        aa.Append (cmd <| fun () -> Log.line "AA")
-        a.Append (cmd <| fun () -> Log.line "A")
-        b.Append (cmd <| fun () -> Log.line "B")
-        
-        Log.start "run 1"
-        p.Run Unchecked.defaultof<_>
-        Log.stop()
-        
-        a.Clear()
-        Log.start "run 1"
-        p.Run Unchecked.defaultof<_>
-        Log.stop()
+            let vbs = 
+                shader.Interface.inputs |> List.toArray |> Array.map (fun par ->
+                    match HashMap.tryFind par.paramSemantic vertexBuffers with
+                    | Some format ->
+                        {
+                            ArrayStride = uint64 (VertexFormat.size format)
+                            StepMode = InputStepMode.Vertex
+                            Attributes =
+                                [|
+                                    // TODO: non-primitive type (M44f, etc.)
+                                    { 
+                                        Format = format
+                                        Offset = 0UL
+                                        ShaderLocation = par.paramLocation 
+                                    }
+                                |]
+                        }
 
-        aa.Clear()
-        aa.Print "YEAH"
-        Log.start "run 1"
-        p.Run Unchecked.defaultof<_>
-        Log.stop()
+                    | None ->
+                        match HashMap.tryFind par.paramSemantic instanceBuffers with
+                        | Some format ->
 
-        exit 0
+                            {
+                                ArrayStride = uint64 (VertexFormat.size format)
+                                StepMode = InputStepMode.Instance
+                                Attributes =
+                                    [|
+                                        // TODO: non-primitive type (M44f, etc.)
+                                        { 
+                                            Format = format
+                                            Offset = 0UL
+                                            ShaderLocation = par.paramLocation 
+                                        }
+                                    |]
+                            }
+                        | None ->
+                            // TODO how to not bind attributes
+                            {
+                                ArrayStride = 0UL
+                                StepMode = InputStepMode.Instance
+                                Attributes = 
+                                    [|
+                                        { 
+                                            Format = VertexFormat.Float4
+                                            Offset = 0UL
+                                            ShaderLocation = par.paramLocation 
+                                        }
+                                    |]
+                            }
+                )
+
+            let colors =  
+                state.outputFormats |> Array.map (fun fmt ->
+                    { 
+                        Format = fmt
+                        AlphaBlend = BlendDescriptor.Default
+                        ColorBlend = BlendDescriptor.Default
+                        WriteMask = ColorWriteMask.All
+                    }
+                )
+
+            let pipeline =
+                state.device.CreateRenderPipeline {
+                    Label = null
+
+                    SampleCount = 1
+                    SampleMask = 1
+                    AlphaToCoverageEnabled = false
+
+                    Layout = 
+                        layout
+
+                    VertexStage = 
+                        {
+                            Module = vs
+                            EntryPoint = "main"
+                        }
+
+                    FragmentStage = 
+                        Some {
+                            Module = fs
+                            EntryPoint = "main"
+                        }
+
+                    VertexState =
+                        Some {
+                            IndexFormat = IndexFormat.Uint32
+                            VertexBuffers = vbs
+                        }
+
+                    PrimitiveTopology = PrimitiveTopology.TriangleList
 
 
-        let p = Program()
+                    ColorStates = 
+                        colors
+
+                    RasterizationState =    
+                        Some {
+                            FrontFace = FrontFace.CCW
+                            CullMode = CullMode.None
+                            DepthBias = 0
+                            DepthBiasClamp = 0.0f
+                            DepthBiasSlopeScale = 0.0f
+                        }
+                    DepthStencilState =
+                        Some {
+                            Format = TextureFormat.Depth24PlusStencil8
+                            DepthWriteEnabled = true
+                            DepthCompare = CompareFunction.LessEqual
+                            StencilFront = StencilStateFaceDescriptor.Default
+                            StencilBack = StencilStateFaceDescriptor.Default
+                            StencilReadMask = 0xFFFFFFFF
+                            StencilWriteMask = 0xFFFFFFFF
+                        }
+                }
+                
+            printfn "create pipeline"
+            cache <- HashMap.add top (vs, fs, pipeline) cache
+            (vs, fs, pipeline)
 
 
-        p.Append (cmd <| fun () -> Log.line "A")
 
-        let s = p.SubProgram()
-        s.Append (cmd <| fun () -> Log.line "B")
-        s.Append (cmd <| fun () -> Log.line "C")
-        s.Append (cmd <| fun () -> Log.line "D")
 
-        p.Append (cmd <| fun () -> Log.line "E")
 
-        Log.start "run 1"
-        p.Run(Unchecked.defaultof<_>)
-        Log.stop()
 
-        
-        s.Clear()
-        Log.start "run 2"
-        p.Run(Unchecked.defaultof<_>)
-        Log.stop()
 
-        
-        s.Append(cmd <| fun () -> Log.line "INNER")
-        Log.start "run 2"
-        p.Run(Unchecked.defaultof<_>)
-        Log.stop()
+type TraversalState =
+    {
+        update          : UpdateState
+        shader          : option<ShaderPromise>
+        vertexBuffers   : HashMap<string, BufferPromise>
+        pipeline        : option<PipelinePromise>
+    }
 
-        
-        s.Set [ cmd (fun () -> Log.line "new one"); cmd (fun () -> Log.line "new two")]
-        Log.start "run 2"
-        p.Run(Unchecked.defaultof<_>)
-        Log.stop()
+
+module TraversalState =     
+    let empty (u : UpdateState) =
+        {
+            update = u
+            shader = None
+            vertexBuffers = HashMap.empty
+            pipeline = None
+        }
+
+module Sg =
+    
+    type Sg = Node<TraversalState>
+
+    type GroupComponent(e : Environment, tup) =
+        inherit Component<TraversalState, SgAttributes * list<Sg>>(e, tup)
+
+        let mutable shaderPromise : option<ShaderPromise> = None
+        let mutable vertexAttributes : HashMap<string, BufferPromise> = HashMap.empty
+        let mutable pipelinePromise : option<PipelinePromise> = None
+
+        override x.Update(_prog : RenderFragment, state : TraversalState) =
+            let (atts, children) = x.State
+
+            // shader
+            let state =
+                match atts.shader with
+                | Some e ->
+                    match shaderPromise with
+                    | Some o ->
+                        let n = o.Update [e]
+                        { state with shader = Some n }
+                    | None -> 
+                        let p = ShaderPromise(state.update, [e])
+                        shaderPromise <- Some p
+                        { state with shader = Some p }
+                | None ->
+                    state
+
+            // vertexBuffers
+            let state =
+                if HashMap.isEmpty atts.vertexAttributes then
+                    vertexAttributes <- HashMap.empty
+                    state
+                else
+                    vertexAttributes <-
+                        (atts.vertexAttributes, vertexAttributes) ||> HashMap.choose2V (fun k att prom ->
+                            match att with
+                            | ValueSome att ->
+                                match prom with
+                                | ValueSome prom ->
+                                    prom.Update att |> ValueSome
+                                | ValueNone ->
+                                    BufferPromise(state.update, BufferUsage.CopyDst ||| BufferUsage.Vertex, att) |> ValueSome
+                            | ValueNone ->
+                                match prom with
+                                | ValueSome _ -> ()
+                                | ValueNone -> ()
+                                ValueNone
+                        )
+                    { state with vertexBuffers = HashMap.union state.vertexBuffers vertexAttributes }
+
+            // pipeline
+            let state =
+                match state.shader with
+                | Some shader ->
+                    match pipelinePromise with
+                    | Some prom ->
+                        let formats = state.vertexBuffers |> HashMap.map (fun _ b -> b.Data.Format)
+                        let res = prom.Update(shader, formats, HashMap.empty)
+                        pipelinePromise <- Some res
+                        { state with pipeline = Some res }
+                    | None ->
+                        let formats = state.vertexBuffers |> HashMap.map (fun _ b -> b.Data.Format)
+                        let pipe = PipelinePromise(state.update, shader, formats, HashMap.empty)
+                        pipelinePromise <- Some pipe
+                        { state with pipeline = Some pipe }
+                | None ->
+                    state
+
+            (state, children)
+
+    type DrawComponent(e : Environment, info : DrawInfo) =
+        inherit Component<TraversalState, DrawInfo>(e, info)
+
+        let mutable destroy = System.Collections.Generic.List<IDisposable>()
+
+        override x.Update(prog : RenderFragment, state : TraversalState) =
+            let d = destroy
+            destroy <- System.Collections.Generic.List<IDisposable>()
+            match state.pipeline with
+            | Some p ->
+                let vs, fs, pipe = p.Acquire info.mode
+                destroy.Add vs
+                destroy.Add fs
+                destroy.Add pipe
+
+
+                let buffers =
+                    p.Interface.inputs |> List.toArray |> Array.choose (fun p ->
+                        match HashMap.tryFind p.paramSemantic state.vertexBuffers with
+                        | Some vb -> 
+                            let (b,o,s) = vb.Acquire()
+                            destroy.Add b
+                            Some (p.paramLocation, b, o, s)
+                        | None -> 
+                            None
+                    )
+
+                prog.Update (fun s ->
+                    s.SetPipeline pipe
+
+                    // TODO: uniforms!!!
+
+                    for (slot, buffer, offset, size) in buffers do
+                        s.SetVertexBuffer(slot, buffer, offset, size)
+
+                    s.Draw info
+                )
+            | _ ->
+                failwith "no pipeline"
+
+            for o in d do o.Dispose()
+            state, []
+
+
+    let draw = 
+        Node.create DrawComponent
+
+    let group = 
+        let creator = Node.create GroupComponent
+        fun a b -> creator(a,b)
+
+
+    module Shader =
+        open FShade
+        type Vertex = 
+            {
+                [<Position>] pos : V4d
+            }
+
+        let bla (v : Vertex) =
+            fragment {
+                return V4d.IOOI
+            }
+
+    let testSg (pos : V3f[]) =
+        let effect =
+            FShade.Effect.ofFunction Shader.bla
+
+        let top =
+            { 
+                SgAttributes.empty with 
+                    shader = Some effect 
+                    vertexAttributes = 
+                        HashMap.ofList [
+                            "Positions", BufferDescriptor.Data (Data.Create pos)
+                        ]
+            }
+
+        group top [
+            draw {
+                indexed = false
+                mode = PrimitiveTopology.TriangleList
+                instanceCount = 1
+                count = 3
+                first = 0
+                firstInstance = 0
+                baseVertex = 0
+            }
+        ]

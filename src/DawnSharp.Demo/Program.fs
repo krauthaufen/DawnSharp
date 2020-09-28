@@ -2204,15 +2204,200 @@ module ComputeDeltaTests =
 
 open FSharp.Data.Adaptive
 
+module SgTest = 
+    open Armadillo
 
+    let run() =
+        Aardvark.Init()
+ 
+        let glfw = Glfw.GetApi()
+        glfw.Init() |> ignore
+        glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi)
+        //glfw.WindowHint(WindowHintBool.Visible, false)
+        let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
+
+        let instance = Instance()
+        instance.EnableBackendValidation true
+        instance.EnableGPUBasedBackendValidation true
+        instance.EnableBeginCaptureOnStartup true
+
+        let adapters = instance.GetDefaultAdapters()
+
+        let idx = 0
+
+        //for (idx, a) in Array.indexed adapters do
+        //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
+        //printf "select device: "
+        //let idx = System.Console.ReadLine() |> int
+
+        let a = adapters.[idx]
+        printfn "using %s %s (%A)" a.Vendor a.Name a.BackendType
+        match a.BackendType with
+        | BackendType.Null -> 
+            printfn "%s" a.Name
+        | _ -> 
+            let dev = a.CreateDevice()
+
+            let binding = 
+                dev.CreateBackendBinding(a.BackendType, NativePtr.toNativeInt win)
+
+            let queue = dev.GetDefaultQueue()
+        
+        
+            //let pDesc = Marshal.AllocHGlobal(sizeof<DawnRaw.WGPUSwapChainDescriptor>) |> NativePtr.ofNativeInt<DawnRaw.WGPUSwapChainDescriptor>
+        
+            let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
+            let swapChainImpl = binding.GetSwapChainImplementation()
+
+            let createSwapChain(size : V2i) =
+                let chain = 
+                    dev.CreateSwapChain(
+                        null,
+                        {
+                            Label = null
+                            Format = swapChainFormat
+                            Implementation = swapChainImpl
+                            Usage = TextureUsage.OutputAttachment
+                            Width = size.X
+                            Height = size.Y
+                            PresentMode = PresentMode.Immediate
+                        }
+                    )
+
+                chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, size.X, size.Y)
+                chain
+            
+
+            dev.Tick()
+            let mutable size = V2i.II
+            glfw.GetFramebufferSize(win, &size.X, &size.Y)
+            let mutable chain = createSwapChain size
+
+            let depth =
+                dev.CreateTexture {
+                    Label = null
+                    Usage = TextureUsage.OutputAttachment
+                    Dimension = TextureDimension.D2D
+                    Size = { Width = size.X; Height = size.Y; Depth = 1 }
+                    Format = TextureFormat.Depth24PlusStencil8
+                    MipLevelCount = 1
+                    SampleCount = 1
+                }
+
+            use depthView =
+                depth.CreateView {
+                    Label = "Franz"
+                    Format = TextureFormat.Depth24PlusStencil8
+                    Dimension = TextureViewDimension.D2D
+                    BaseMipLevel = 0
+                    MipLevelCount = 1
+                    BaseArrayLayer = 0
+                    ArrayLayerCount = 1
+                    Aspect = TextureAspect.All
+                }
+        
+            glfw.PollEvents()
+            let swapChainFormat = binding.GetPreferredSwapChainTextureFormat()
+
+            let updateState : UpdateState =
+                {
+                    outputFormats = [|swapChainFormat|] 
+                    outputs = Map.ofList ["Colors", (typeof<V4d>, 0)]
+                    device = dev
+                }
+
+            let mutable a = [| V3f.OOO; V3f.IOO; V3f.OIO |]
+            let mutable b = [| V3f.OOO; -V3f.IOO; -V3f.OIO |]
+
+
+            let runner = Reconciler()
+            let p = new RenderProgram(dev)
+            let r = ReconcilerNode<_>(runner, 0, Sg.testSg a, TraversalState.empty updateState)
+            r.Fragment <- p.Root
+            runner.RunUntilEmpty()
+            
+            let mutable dirty = true
+            glfw.SetKeyCallback(win, GlfwCallbacks.KeyCallback(fun _ k _ ac _ ->
+                match ac with
+                | InputAction.Press -> 
+                    match k with
+                    | Keys.Space ->
+                        runner.Update(r, Sg.testSg b)
+                        Fun.Swap(&a, &b)
+                        dirty <- true
+                        glfw.PostEmptyEvent ()
+                        ()
+                    | _ ->
+                        ()
+                | _ ->
+                    ()
+            )) |> ignore
+
+
+            let render() =  
+                let mutable s = V2i.II
+                glfw.GetFramebufferSize(win, &s.X, &s.Y)
+                if false && s <> size then
+                    size <- s
+                    chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, s.X, s.Y)
+
+                use tex = chain.GetCurrentTextureView()
+
+                use cmd = dev.CreateCommandEncoder()
+                use pass = 
+                    cmd.BeginRenderPass { 
+                        Label = null
+                        ColorAttachments = 
+                            [|
+                                { 
+                                    Attachment = tex
+                                    ResolveTarget = null
+                                    LoadOp = LoadOp.Clear
+                                    StoreOp = StoreOp.Store
+                                    ClearColor = { R = 0.5f; G = 0.5f; B = 0.5f; A = 1.0f }
+                                }
+                            |]
+                        DepthStencilAttachment =
+                            Some {
+                                Attachment = depthView
+                                DepthLoadOp = LoadOp.Clear
+                                DepthStoreOp = StoreOp.Store
+                                ClearDepth = 1.0f
+                                DepthReadOnly = false
+                                StencilLoadOp = LoadOp.Clear
+                                StencilStoreOp = StoreOp.Store
+                                ClearStencil = 0
+                                StencilReadOnly = false
+                            }
+                        
+                        OcclusionQuerySet = null
+                    }
+
+
+                p.Run(pass)
+
+
+                pass.EndPass()
+           
+           
+                use buf = cmd.Finish()
+                queue.Submit [| buf |]
+
+                chain.Present()
+                printfn "rendered"
+
+            glfw.SetWindowRefreshCallback(win, GlfwCallbacks.WindowRefreshCallback (fun w -> dirty <- true)) |> ignore
+            glfw.PostEmptyEvent()
+            while not (glfw.WindowShouldClose win) do
+                if dirty then 
+                    dirty <- false
+                    render()
+                glfw.WaitEvents()
 
 
 [<EntryPoint; STAThread>]
 let main argv = 
-    //Armadillo.ComponentTest.run()
-    Armadillo.Program.Bla.test()
-    //ComputeDeltaTests.validate()
-    //ComputeDeltaTests.benchmark()
+    SgTest.run()
     exit 0
 
     Aardvark.Init()

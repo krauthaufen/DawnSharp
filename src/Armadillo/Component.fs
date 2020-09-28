@@ -28,7 +28,7 @@ type Component(e : Environment) =
 
 type [<AbstractClass>] Component<'s>(e : Environment) =
     inherit Component(e)
-    abstract member Update : 's -> struct('s * list<Node<'s>>)
+    abstract member Update : RenderFragment * 's -> struct('s * list<Node<'s>>)
 
 and [<AbstractClass>] Node<'s>() =
     abstract member CreateComponent : Environment -> Component<'s>
@@ -172,6 +172,9 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
     let mutable dirty = DirtyState.Dirty
     let mutable mounted = false
 
+    let mutable fragment : RenderFragment = null
+
+
     let diff (s : 's) =
         ListDiffing.custom
             (fun (r : ReconcilerNode<'s>) (value : Node<'s>) -> r.Node = value)
@@ -184,6 +187,10 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
             )
                 
     do env.Add this
+
+    member x.Fragment
+        with get() = fragment
+        and set v = fragment <- v
 
     interface Environment with
         member x.MarkDirty(s) = 
@@ -203,6 +210,7 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
         node <- Unchecked.defaultof<_>
         dirty <- DirtyState.UpToDate
         mounted <- false
+        fragment.Dispose()
 
     member x.Component = 
         comp
@@ -255,11 +263,23 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
                     comp.Mount()
 
                 // render
-                let struct (newState, newChildren) = comp.Update traversalState
+                let struct (newState, newChildren) = comp.Update(fragment, traversalState)
 
                 // update children
-                let struct(_, ops) = (diff newState).Update(children, newChildren)
-                children <- IndexList.applyDelta children ops |> fst
+                let oldChildren = children
+                let struct(_, ops) = (diff newState).Update(oldChildren, newChildren)
+                children <- IndexList.applyDelta oldChildren ops |> fst
+
+                let mutable last = null
+                for c in children do
+                    if isNull c.Fragment then   
+                        let f = fragment.InsertAfter last
+                        c.Fragment <- f
+                        last <- f
+                    else
+                        last <- c.Fragment
+
+
 
 [<AutoOpen>]
 module ReconcilerExtensions =
@@ -290,7 +310,7 @@ module ComponentTest =
         override x.ReceivedValue() =
             Log.line "list received %A" x.State
 
-        override x.Update(state) =
+        override x.Update(_, state) =
             Log.line "update list %A" x.State
             //{ state with stack = 1 :: state.stack }, x.State
             struct(state, x.State)
@@ -308,7 +328,7 @@ module ComponentTest =
         override x.ReceivedValue() =
             Log.line "applicator received %A" x.State
 
-        override x.Update(state) =
+        override x.Update(_, state) =
             let (value, child) = x.State
             Log.line "update applicator %A %A" value child
             struct({ state with stack = (value % 2) :: state.stack }, [child])
@@ -329,7 +349,7 @@ module ComponentTest =
         override x.ReceivedValue() =
             Log.line "leaf received %d" x.State
 
-        override x.Update(s) =
+        override x.Update(_, s) =
             Log.line "update leaf %d (%A)" x.State s
             struct(s, [])
 
@@ -355,7 +375,7 @@ module ComponentTest =
         override x.ReceivedValue() =
             Log.line "aleaf received %A" x.State
 
-        override x.Update(s) =
+        override x.Update(_, s) =
             Log.line "update aleaf %d (%A)" (AVal.force x.State) s
             struct(s, [])
 
@@ -378,7 +398,10 @@ module ComponentTest =
             |> Sg.apply 5
 
         let runner = Reconciler()
+        let p = new RenderProgram(null)
         let r = ReconcilerNode<_>(runner, 0, graph, { stack = [] })
+        r.Fragment <- p.Root
+
         runner.Update(r, graph)
         Log.stop()
 

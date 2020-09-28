@@ -1241,7 +1241,13 @@ module rec Ast =
                 printfn "    member x.Dispose() = x.Dispose(true)"
                 printfn "    override x.Finalize() = x.Dispose(false)"
                 printfn "    member x.Clone() = "
-                printfn "        if isDisposed || Interlocked.Increment(&refCount.contents) = 1 then raise <| System.ObjectDisposedException(\"%s\")" name
+                printfn "        let mutable o = refCount.contents"
+                printfn "        if o = 0 then raise <| System.ObjectDisposedException(\"%s\")" name
+                printfn "        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)"
+                printfn "        while o <> n do"
+                printfn "            o <- n"
+                printfn "            if o = 0 then raise <| System.ObjectDisposedException(\"%s\")" name
+                printfn "            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)"
                 printfn "        DawnRaw.wgpu%sReference(handle)" name
                 printfn "        new %s(%s)" name ctorArgsUseWithRefCount
                 printfn "    interface System.IDisposable with"
