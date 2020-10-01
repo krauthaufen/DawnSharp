@@ -432,8 +432,9 @@ module private Managed =
                 first <- v
 
         member x.Create(compile) =
-            new ManagedRenderFragment() :> IRenderFragment
-
+            let f = new ManagedRenderFragment() :> IRenderFragment
+            f.Update compile
+            f
         member x.Dispose() =
             first <- null
 

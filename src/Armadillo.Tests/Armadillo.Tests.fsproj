@@ -17,6 +17,7 @@
     <Compile Include="ListBuilder.fs" />
     <Compile Include="Heap.fs" />
     <Compile Include="ListDiff.fs" />
+    <Compile Include="RangeSet.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Armadillo\Armadillo.fsproj" />

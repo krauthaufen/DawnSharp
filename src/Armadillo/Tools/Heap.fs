@@ -4,6 +4,7 @@ open System
 open Aardvark.Base
 open System.Collections.Generic
 
+[<AllowNullLiteral>]
 type private HeapEntry<'k, 'v> =
     val mutable public Key : 'k
     val mutable public Value : 'v

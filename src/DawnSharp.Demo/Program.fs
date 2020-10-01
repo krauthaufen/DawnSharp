@@ -2217,13 +2217,13 @@ module SgTest =
         let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
 
         let instance = Instance()
-        instance.EnableBackendValidation true
-        instance.EnableGPUBasedBackendValidation true
-        instance.EnableBeginCaptureOnStartup true
+        //instance.EnableBackendValidation true
+        //instance.EnableGPUBasedBackendValidation true
+        //instance.EnableBeginCaptureOnStartup true
 
         let adapters = instance.GetDefaultAdapters()
 
-        let idx = 0
+        let idx = 1
 
         //for (idx, a) in Array.indexed adapters do
         //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
@@ -2260,7 +2260,7 @@ module SgTest =
                             Usage = TextureUsage.OutputAttachment
                             Width = size.X
                             Height = size.Y
-                            PresentMode = PresentMode.Immediate
+                            PresentMode = PresentMode.Mailbox
                         }
                     )
 
@@ -2304,34 +2304,114 @@ module SgTest =
                     outputFormats = [|swapChainFormat|] 
                     outputs = Map.ofList ["Colors", (typeof<V4d>, 0)]
                     device = dev
+                    caching = Dict()
                 }
 
-            let mutable a = [| V3f.OOO; V3f.IOO; V3f.OIO |]
-            let mutable b = [| V3f.OOO; -V3f.IOO; -V3f.OIO |]
+            let mutable a = Data.Create [| V3f.OOO; V3f.IOO; V3f.OIO |]
+            let mutable b = Data.Create [| V3f.OOO; -V3f.IOO; -V3f.OIO |]
 
+            let mutable quad = true
+
+            let cnt = cval 3
+            let draw =
+                cnt |> AVal.map (fun cnt -> 
+                    {
+                        indexed = false
+                        mode = PrimitiveTopology.TriangleList
+                        instanceCount = 1
+                        count = cnt
+                        first = 0
+                        firstInstance = 0
+                        baseVertex = 0
+                    } 
+                )
+            let mutable dirty = true
+
+            dev.SetUncapturedErrorCallback (ErrorCallback(fun typ str _ ->
+                Log.warn "%s" str
+            ))
+
+
+            
 
             let runner = Reconciler()
-            let p = new RenderProgram(dev)
-            let r = ReconcilerNode<_>(runner, 0, Sg.testSg a, TraversalState.empty updateState)
+            let p = new RenderProgram(dev, false)
+            let r = ReconcilerNode<_>(runner, 0, SgTest.testSg C4b.Red draw quad [] a, TraversalState.empty updateState)
             r.Fragment <- p.Root
             runner.RunUntilEmpty()
             
-            let mutable dirty = true
+
+            let rand = RandomSystem()
+            let ndc = Box2d(-V2d.II, V2d.II)
+            let triSize = Box2d(-V2d.II * 0.05, V2d.II * 0.05)
+            let newTriangle() =
+                let p0 = rand.UniformV2d(ndc)
+                let p1 = p0 + rand.UniformV2d triSize
+                let p2 = p0 + rand.UniformV2d triSize
+                Triangle2d(p0, p1, p2)
+                
+
+
+
+            let mutable all = List.init 50000 (fun _ -> newTriangle())
+            let mutable elemCount = 1
+            let mutable elems = List.truncate elemCount all
+            let rand = RandomSystem()
             glfw.SetKeyCallback(win, GlfwCallbacks.KeyCallback(fun _ k _ ac _ ->
                 match ac with
-                | InputAction.Press -> 
+                | InputAction.Press | InputAction.Repeat -> 
                     match k with
-                    | Keys.Space ->
-                        runner.Update(r, Sg.testSg b)
-                        Fun.Swap(&a, &b)
-                        dirty <- true
-                        glfw.PostEmptyEvent ()
-                        ()
+                    | Keys.W ->
+                        elemCount <- elemCount + 1
+                        Log.line "%d" elemCount
+                        elems <- List.truncate elemCount all 
+                    | Keys.S ->
+                        elemCount <- max 0 (elemCount - 1)
+                        Log.line "%d" elemCount
+                        elems <- List.truncate elemCount all 
                     | _ ->
                         ()
                 | _ ->
                     ()
+                //match ac with
+                //| InputAction.Press | InputAction.Repeat -> 
+                //    match k with
+                //    | Keys.Space ->
+                //        runner.Update(r, SgTest.testSg C4b.Red draw quad 10 b)
+                //        Fun.Swap(&a, &b)
+                //        dirty <- true
+                //        glfw.PostEmptyEvent ()
+                //        ()
+                //    | Keys.Enter ->
+                //        quad <- not quad
+                //        runner.Update(r, SgTest.testSg C4b.Red draw quad 10 a)
+                //        dirty <- true
+                //        glfw.PostEmptyEvent ()
+                //        ()
+                //    | Keys.X ->
+                //        transact (fun () -> cnt.Value <- 3 - cnt.Value)
+                //        runner.RunUntilEmpty()
+                //        dirty <- true
+                //        glfw.PostEmptyEvent ()
+                //        () 
+                //    | Keys.Y ->
+                //        let color = rand.UniformC3f().ToC4b()
+                //        runner.Update(r, SgTest.testSg color draw quad 10 a)
+                //        dirty <- true
+                //        glfw.PostEmptyEvent ()
+                //        ()
+                //    | _ ->
+                //        ()
+                //| _ ->
+                //    ()
             )) |> ignore
+
+
+            let sw = System.Diagnostics.Stopwatch()
+            let mutable frames = 0
+
+
+            let mutable h = 0.0
 
 
             let render() =  
@@ -2372,7 +2452,12 @@ module SgTest =
                         
                         OcclusionQuerySet = null
                     }
-
+                    
+                h <- (h + 0.005) % 1.0
+                let color = HSVf(float32 h, 0.5f, 1.0f).ToC3f().ToC4b()
+                let newSg = SgTest.testSg color draw quad elems a
+                runner.Update(r, newSg)
+                dirty <- true
 
                 p.Run(pass)
 
@@ -2384,19 +2469,53 @@ module SgTest =
                 queue.Submit [| buf |]
 
                 chain.Present()
-                printfn "rendered"
+                frames <- frames + 1
+                if frames > 100 then
+                    sw.Stop()
+                    let dt = sw.Elapsed.TotalSeconds
+                    if dt > 0.0 then
+                        Log.line "%.2ffps" (float frames / dt)
+                    frames <- 0
+                    sw.Restart()
 
             glfw.SetWindowRefreshCallback(win, GlfwCallbacks.WindowRefreshCallback (fun w -> dirty <- true)) |> ignore
             glfw.PostEmptyEvent()
             while not (glfw.WindowShouldClose win) do
-                if dirty then 
-                    dirty <- false
-                    render()
-                glfw.WaitEvents()
+                render()
+                glfw.PollEvents()
 
+
+let rec listHash (a : int) (l : list<'a>) =
+    match l with
+    | h :: t ->
+        listHash (HashCode.Combine(a, Unchecked.hash h)) t
+    | [] -> 
+        a
 
 [<EntryPoint; STAThread>]
 let main argv = 
+
+    ////FSharp.Data.Adaptive.DefaultEqualityComparer.SetProvider {
+    ////    new IEqualityProvider with
+    ////        member x.GetEqualityComparer<'a>() =   
+    ////            if typeof<'a>.IsGenericType && typeof<'a>.GetGenericTypeDefinition() = typedefof<list<_>> then
+
+    ////                failwith ""
+    ////            else
+    ////                DefaultEqualityComparer<'a>.Instance
+    ////}
+
+
+    //let a = List.init 10_000_000 id
+
+    //for i in 1 .. 100 do
+    //    let sw = System.Diagnostics.Stopwatch.StartNew()
+    //    let hash = listHash 0 a
+    //    sw.Stop()
+    //    printfn "%A (%A)" hash sw.MicroTime
+
+    //exit 0
+    
     SgTest.run()
     exit 0
 
@@ -2415,7 +2534,7 @@ let main argv =
 
     let adapters = instance.GetDefaultAdapters()
 
-    let idx = 0
+    let idx = 1
 
     //for (idx, a) in Array.indexed adapters do
     //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
@@ -2433,25 +2552,6 @@ let main argv =
         for e in a.Extensions do
             printfn "%s" e
 
-        exit 0
-
-        Sg.Hans.test dev
-        //run dev
-        use buffy = dev.CreateBuffer<int>(1024, BufferUsage.CopySrc ||| BufferUsage.CopyDst)
-
-
-        buffy.Upload (Array.init 1024 id)
-        buffy.Download() |> printfn "%A"
-        exit 0
-        
-        //let sw = System.Diagnostics.Stopwatch.StartNew()
-        //for i in 1 .. 100 do
-        //    let a = dev.CreateBuffer { Label = "asdsad"; Usage = BufferUsage.Vertex ||| BufferUsage.CopyDst; Size = 1024UL; MappedAtCreation = false }
-        //    a.Dispose()
-        //    //Console.ReadLine()
-        //sw.Stop()
-        //printfn "%A" sw.Elapsed.TotalMilliseconds
-        //exit 0
         dev.SetUncapturedErrorCallback(ErrorCallback(fun typ msg _ ->
             printfn "%A: %s" typ msg
         ), 0n) |> ignore
@@ -2643,9 +2743,6 @@ let main argv =
 
             use tex = chain.GetCurrentTextureView()
 
-            let a = dev.CreateRenderBundleEncoder (failwith "")
-            let bla = a.Finish()
-
 
 
             use cmd = dev.CreateCommandEncoder()
@@ -2677,8 +2774,6 @@ let main argv =
                         
                     OcclusionQuerySet = null
                 }
-
-            pass.ExecuteBundles [| bla |]
             pass.SetPipeline(pipeline)
             //pass.SetIndexBufferWithFormat(ib, IndexFormat.Uint32, 0UL, 4UL * uint64 idx.Length)
             pass.SetVertexBuffer(0, buf, 0UL, 12UL * uint64 arr.Length)

@@ -288,6 +288,125 @@ module AStar =
 
                     ValueNone
     
+        let step (diffing : ListDiffing<'a, 'b>) (target : V2i) (queue : Heap<V2i, Path<'a, 'b>>) =
+            let best = queue.Dequeue()
+                
+            match best.left with
+            | [] -> 
+                // left is empty
+                match best.right with
+                | [] ->
+                    // both are empty -> done
+                    ValueSome best
+                | _h :: t ->
+                    // insert h -> re-enqueue
+                    let pos = best.position + V2i(0,1)
+                    let len = best.length + 1.0
+                    queue.EnqueueOrDecrease(
+                        pos,
+                        { 
+                            position = pos
+                            length = len
+                            path = best.path.Append Operation.Insert
+                            weight = Vec.distance pos target + len
+                            left = []
+                            right = t
+                        }
+                    )
+                    ValueNone
+            | l0 :: l1 -> 
+                    
+                // left is non-empty
+                //let li0 = best.left.MinIndex
+                //let (l0, l1) = best.left |> IndexList.tryRemove li0 |> Option.get
+
+                match best.right with
+                | [] ->
+                    // right is empty -> remove
+                    let pos = best.position + V2i(1,0)
+                    let len = best.length + 1.0
+                    queue.EnqueueOrDecrease(
+                        pos,
+                        { 
+                            position = pos
+                            length = len
+                            path = best.path.Append Operation.Remove
+                            weight = Vec.distance pos target + len
+                            left = l1
+                            right = []
+                        }
+                    )
+                    ValueNone
+                | r0 :: r1 ->
+                    if diffing.Equals(l0, r0) then
+                        // equal heads
+                        let inline cont (path : OperationList) (pos : V2i) (len : float) (l : list<'a>) (r : list<'b>) =
+                            queue.EnqueueOrDecrease(
+                                pos,
+                                { 
+                                    position = pos
+                                    length = len
+                                    weight = Vec.distance pos target + len
+                                    path = path
+                                    left = l
+                                    right = r
+                                }
+                            )
+
+                        let rec skipEqualPrefix (path : OperationList) (pos : V2i) (len : float) (l : list<'a>) (r : list<'b>) =
+                            match l with
+                            | [] ->
+                                cont path pos len l r
+                            | l0 :: l1 ->
+                                match r with
+                                | r0 :: r1 ->
+                                    //let li0 = l.MinIndex
+                                    //let (l0, l1) = l.TryRemove li0 |> Option.get
+
+                                    if diffing.Equals(l0, r0) then
+                                        let pp = path.Append Operation.Update
+                                        skipEqualPrefix pp (pos + V2i.II) (len + Constant.Sqrt2) l1 r1
+                                    else
+                                        cont path pos len l r
+                                | [] ->
+                                    cont path pos len l r
+
+                        skipEqualPrefix (best.path.Append Operation.Update) (best.position + V2i(1,1)) (best.length + Constant.Sqrt2) l1 r1
+
+                    else
+                        do // Remove
+                            let len = best.length + 1.0
+                            let pos = best.position + V2i(1,0)
+                            queue.EnqueueOrDecrease(
+                                pos,
+                                { 
+                                    position = pos
+                                    length = len
+                                    path = best.path.Append Operation.Remove
+                                    weight = Vec.distance pos target + len
+                                    left = l1
+                                    right = best.right
+                                }
+                            )
+
+                        do // Add
+                            let len = best.length + 1.0
+                            let pos = best.position + V2i(0,1)
+                            queue.EnqueueOrDecrease(
+                                pos,
+                                { 
+                                    position = pos
+                                    length = len
+                                    path = best.path.Append Operation.Insert
+                                    weight = Vec.distance pos target + len
+                                    left = best.left
+                                    right = r1
+                                }
+                            )
+
+
+                    ValueNone
+    
         let astarIndexList (differ : ListDiffing<'a, 'b>) (l : IndexList<'a>) (rCount : int) (r : list<'b>) =
             if l.Count = 0 then
                 if rCount = 0 then
@@ -406,6 +525,134 @@ module AStar =
                     steps <- steps + 1
             
                 delta
+                
+        let astar (differ : ListDiffing<'a, 'b>) (lCount : int) (l : list<'a>) (rCount : int) (r : list<'b>) =
+            if lCount = 0 then
+                if rCount = 0 then
+                    []
+                else
+                    // all new
+                    let b = ListBuilder()
+                    let mutable i = 0
+                    for ri in r do
+                        let v = differ.Create ri
+                        let id = i
+                        b.Append ((id, Set v))
+                        i <- id + 1
+
+                    b.ToList()
+            elif rCount = 0 then
+                // all removed
+                let b = ListBuilder()
+                for (id, v) in List.indexed l do  
+                    differ.Destroy v
+                    b.Append((id, ElementOperation.Remove))
+                b.ToList()
+            else    
+                let target = V2i(lCount, rCount)
+
+                let p0 =
+                    {
+                        left = List.indexed l
+                        right = r
+                        length = 0.0
+                        position = V2i.OO
+                        path = OperationList.Empty
+                        weight = Vec.distance V2i.OO target
+                    }
+
+                let paths = Heap<V2i, Path<int * 'a, 'b>>(PathComparer.Instance)
+                paths.EnqueueOrDecrease(p0.position, p0)
+
+                let mutable delta = Unchecked.defaultof<list<int * ElementOperation<'b>>>
+                let mutable fin = false
+
+                let mutable steps = 0
+                while not fin && paths.Count > 0 do
+                    match stepTup differ target paths with
+                    | ValueSome best ->
+                        let path = best.path.ToList()
+                        let rec run (status : UpdateStatus) (b : ListBuilder<_>) (lastIndex : int) (ops : list<Operation>) (l : list<int * 'a>) (r : list<'b>) =
+                            match ops with
+                            | [] ->
+                                struct(status, b.ToList())
+
+                            | Operation.Update :: ops ->
+                                match l with
+                                | (lid,l0) :: l1 ->
+                                    match r with
+                                    | r0 :: r1 -> 
+                                        let s = differ.TryUpdate(l0, r0)
+                                        if s <> UpdateStatus.Error then
+                                            
+                                            run (max status s) b lid ops l1 r1
+                                        else
+                                            differ.Destroy l0
+                                            b.Append((lid, Set (differ.Create r0)))
+                                            run UpdateStatus.Error b lid ops l1 r1
+                                    | [] ->
+                                        failwith "empty list"
+                                | [] ->
+                                    failwith "empty list"
+
+                            | Operation.Remove :: Operation.Insert :: ops 
+                            | Operation.Insert :: Operation.Remove :: ops ->
+                                match l with
+                                | (id, l0) :: l1 ->
+                                    match r with
+                                    | r0 :: r1 ->
+                                        let s = differ.TryUpdate(l0, r0)
+                                        if s <> UpdateStatus.Error then
+                                            run (max status s) b id ops l1 r1
+                                        else
+                                            differ.Destroy l0
+                                            b.Append((id, ElementOperation.Set (differ.Create r0)))
+                                            run UpdateStatus.Error b id ops
+                                                l1 r1
+                                    | [] ->
+                                        failwith "bad"
+                                | [] ->
+                                    failwith "bad"
+
+                            | Operation.Remove :: ops ->
+                                match l with
+                                | (id, l0) :: l1 ->
+                                    differ.Destroy l0
+                                    b.Append((id, ElementOperation.Remove))
+                                    run UpdateStatus.Error b id ops
+                                        l1 r
+                                | [] ->
+                                    failwith "bad"
+                                    
+                            | Operation.Insert :: ops ->
+                                match r with
+                                | r0 :: r1 -> 
+                                    let id = lastIndex
+                                        //match l with
+                                        //| [] ->  lastIndex
+                                        //| (n,_) :: _ -> Index.between lastIndex n
+                                    b.Append((id, ElementOperation.Set (differ.Create r0)))
+                                    run UpdateStatus.Error b id ops
+                                        l r1
+                                | [] ->
+                                    failwith "bad"
+                                
+                            | op :: _ ->
+                                failwithf "bad op: %A" op
+
+                        let struct(_, d) = run UpdateStatus.Nop (ListBuilder()) -1 path (List.indexed l) r
+                        delta <- d
+                        fin <- true
+                    | ValueNone ->
+                        ()
+                    steps <- steps + 1
+            
+                delta
+
+    module List =
+        let computeDelta (l : list<'a>) (r : list<'a>) =
+            astar ListDiffing.simple (List.length l) l (List.length r) r
+
 
     module IndexList =
         let computeDeltaToList (l : IndexList<'a>) (r : list<'a>) =

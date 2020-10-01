@@ -82,8 +82,6 @@ module Helpers =
             cnt <- cnt + 1
 
         let res = min a.Length b.Length - cnt
-        System.Console.WriteLine(sprintf "%A %A: %d" a b res)
-
         res
 
 module Method =
@@ -429,7 +427,6 @@ module rec Ast =
                 cnt <- cnt + 1
 
             let res = min a.Length b.Length - cnt
-            System.Console.WriteLine(sprintf "%A %A: %d" a b res)
 
             res
 
@@ -970,8 +967,6 @@ module rec Ast =
             defs |> List.map (fun d ->
                 let used = d.UsedTypes |> Seq.filter (fun t -> defs |> List.exists (fun ti -> equalType ti t)) |> Seq.toList |> List.distinct
 
-                System.Console.WriteLine(sprintf "%s: [%s]" (frontendName d) (used |> List.map frontendName |> String.concat "; "))
-
                 d, used
             )
 
@@ -989,6 +984,33 @@ module rec Ast =
    
         let defs = tops graph
             
+        for d in defs do
+            match d with
+            | Object(_, meths) ->
+                for m in meths do
+                    match m.returnType.Value with
+                    | Object(name, _) ->
+                        
+                        let rec objects (t : TypeDef) =
+                            match t with
+                            | Object(name,_) -> [name]
+                            | Struct(_, _, fields) ->
+                                fields |> List.collect (fun f -> objects f.fieldType.Value)
+                            | Array t | ByRef t | Ptr t | Option t ->
+                                objects t
+                            | Unit | String | Enum _ | Bool | Float _ | Int _ | NativeInt _ -> []
+                            | CompletionCallback _ | PersistentCallback _ -> []
+
+                        let referenced = m.parameters |> List.collect (fun f -> objects f.fieldType.Value)
+
+                        System.Console.WriteLine(sprintf "CREATOR: %s -> %s" m.name name)
+                        for r in referenced do 
+                            System.Console.WriteLine("  {0}", r)
+                    | _ ->
+                        ()
+                ()
+            | _ ->
+                ()
 
 
 
@@ -1229,25 +1251,25 @@ module rec Ast =
                 printfn "        if not isDisposed then "
                 printfn "            let r = Interlocked.Decrement(&refCount.contents)"
                 printfn "            isDisposed <- true"
-                printfn "            if disposing then System.GC.SuppressFinalize x"
-                match destroy with
-                | Some destroy -> 
-                    printfn "            if r = 0 then DawnRaw.wgpu%sDestroy(handle)" name
-                | None ->
-                    ()
+                //printfn "            if disposing then System.GC.SuppressFinalize x"
+                //match destroy with
+                //| Some destroy -> 
+                //    printfn "            if r = 0 then DawnRaw.wgpu%sDestroy(handle)" name
+                //| None ->
+                //    ()
                 printfn "            DawnRaw.wgpu%sRelease(handle)" name
 
 
                 printfn "    member x.Dispose() = x.Dispose(true)"
-                printfn "    override x.Finalize() = x.Dispose(false)"
+                //printfn "    override x.Finalize() = x.Dispose(false)"
                 printfn "    member x.Clone() = "
                 printfn "        let mutable o = refCount.contents"
                 printfn "        if o = 0 then raise <| System.ObjectDisposedException(\"%s\")" name
-                printfn "        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)"
+                printfn "        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)"
                 printfn "        while o <> n do"
                 printfn "            o <- n"
                 printfn "            if o = 0 then raise <| System.ObjectDisposedException(\"%s\")" name
-                printfn "            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)"
+                printfn "            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)"
                 printfn "        DawnRaw.wgpu%sReference(handle)" name
                 printfn "        new %s(%s)" name ctorArgsUseWithRefCount
                 printfn "    interface System.IDisposable with"
@@ -1294,7 +1316,7 @@ module rec Ast =
                                 meth.parameters |> List.map (fun p ->
                                     sprintf "%s : %s" p.name (frontendName p.fieldType.Value)
                                 ) |> String.concat ", "
-                            printfn "    member inline x.%s(%s) : %s = " meth.name argDecl ret
+                            printfn "    member x.%s(%s) : %s = " meth.name argDecl ret
 
                             //for p in meth.parameters do
                             //    if p.Defaultable then

@@ -12,7 +12,40 @@ type DirtyState =
     | Dirty = 1
     | ForceUpdate = 2
 
+
+[<AbstractClass>]
+type ReconcilerNode() =
+    abstract member Level : int
+    abstract member Run : unit -> unit
+    
+type UpdateQueue =
+    abstract member Enqueue : (unit -> unit) -> unit
+
+type Reconciler() =
+    let queue = Heap<ReconcilerNode, int>()
+    let updates = System.Collections.Generic.Queue<unit -> unit>()
+
+    member x.RunUntilEmpty() =
+        while queue.Count > 0 do
+            let e = queue.DequeueKey()
+            e.Run()
+
+        while updates.Count > 0 do
+            let e = updates.Dequeue()
+            e()
+
+    member x.Add(r : ReconcilerNode) =
+        queue.Enqueue(r, r.Level, false, true)
+    
+    member x.Remove(r : ReconcilerNode) =
+        queue.Remove(r) |> ignore
+
+    interface UpdateQueue with
+        member x.Enqueue a = updates.Enqueue a
+
 type Environment =
+    abstract member Level : int
+    abstract member Reconciler : Reconciler
     abstract member MarkDirty : DirtyState -> unit
 
 [<AbstractClass>]
@@ -31,6 +64,7 @@ type [<AbstractClass>] Component<'s>(e : Environment) =
     abstract member Update : RenderFragment * 's -> struct('s * list<Node<'s>>)
 
 and [<AbstractClass>] Node<'s>() =
+    abstract member Hash : int
     abstract member CreateComponent : Environment -> Component<'s>
     abstract member TryUpdate : Component<'s> -> voption<bool>
 
@@ -110,11 +144,15 @@ module ComponentConstructor =
 type Node<'s, 'a>(ctor : ComponentConstructor<'s, 'a>, value : 'a) =
     inherit Node<'s>()
 
+    let hash = HashCode.Combine(Unchecked.hash ctor, ShallowEqualityComparer.ShallowHashCode value)
+
     member x.Constructor = ctor
     member x.Value = value
 
+    override x.Hash = hash
+
     override x.GetHashCode() =
-        HashCode.Combine(Unchecked.hash ctor, ShallowEqualityComparer.ShallowHashCode value)
+        hash
 
     override x.Equals o =
         match o with
@@ -143,26 +181,6 @@ module Node =
         let ctor = ComponentConstructor.getConstructor action
         fun value -> Node<'s, 'a>(ctor, value) :> Node<_>
 
-[<AbstractClass>]
-type ReconcilerNode() =
-    abstract member Level : int
-    abstract member Run : unit -> unit
-
-type Reconciler() =
-    let queue = Heap<ReconcilerNode, int>()
-
-    member x.RunUntilEmpty() =
-        while queue.Count > 0 do
-            let e = queue.DequeueKey()
-            e.Run()
-
-    member x.Add(r : ReconcilerNode) =
-        queue.Enqueue(r, r.Level, false, true)
-    
-    member x.Remove(r : ReconcilerNode) =
-        queue.Remove(r) |> ignore
-
-
 type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversalState : 's) as this =
     inherit ReconcilerNode()
     let mutable comp = node.CreateComponent this
@@ -172,17 +190,20 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
     let mutable dirty = DirtyState.Dirty
     let mutable mounted = false
 
+    let mutable oldChildState = ValueNone
+
     let mutable fragment : RenderFragment = null
 
 
-    let diff (s : 's) =
+    let diff (stateChanged : bool) (s : 's) =
         ListDiffing.custom
-            (fun (r : ReconcilerNode<'s>) (value : Node<'s>) -> r.Node = value)
+            (fun (r : ReconcilerNode<'s>) (value : Node<'s>) -> r.Node.Hash = value.Hash)
             (fun (value : Node<'s>) -> ReconcilerNode<'s>(env, level + 1, value, s))
             (fun (r : ReconcilerNode<'s>) -> r.Destroy())
             (fun (r : ReconcilerNode<'s>) (value : Node<'s>) ->
                 r.Node <- value
-                r.TraversalState <- s
+                if stateChanged then
+                    r.TraversalState <- s
                 UpdateStatus.Success
             )
                 
@@ -193,6 +214,8 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
         and set v = fragment <- v
 
     interface Environment with
+        member x.Level = level
+        member x.Reconciler = env
         member x.MarkDirty(s) = 
             if s <> DirtyState.UpToDate then
                 dirty <- s
@@ -218,14 +241,14 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
     member x.TraversalState
         with get() = traversalState
         and set v = 
-            if not (Unchecked.equals traversalState v) then
-                traversalState <- v
-                dirty <- DirtyState.ForceUpdate
-                env.Add x
+            
+            traversalState <- v
+            dirty <- DirtyState.ForceUpdate
+            env.Add x
 
     member x.Node
-        with get() = node
-        and set v =  
+        with get() : Node<'s> = node
+        and set (v : Node<'s>) =  
             if node <> v then
                 node <- v
                 dirty <- DirtyState.Dirty
@@ -265,9 +288,19 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
                 // render
                 let struct (newState, newChildren) = comp.Update(fragment, traversalState)
 
+                let stateChanged = 
+                    match newChildren with
+                    | [] -> 
+                        false
+                    | _ -> 
+                        match oldChildState with
+                        | ValueSome s when Unchecked.equals s newState -> false
+                        | _ ->
+                            oldChildState <- ValueSome newState
+                            true
                 // update children
                 let oldChildren = children
-                let struct(_, ops) = (diff newState).Update(oldChildren, newChildren)
+                let struct(_, ops) = (diff stateChanged newState).Update(oldChildren, newChildren)
                 children <- IndexList.applyDelta oldChildren ops |> fst
 
                 let mutable last = null

@@ -3097,18 +3097,16 @@ type BindGroup(device : Device, handle : BindGroupHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuBindGroupRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("BindGroup")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("BindGroup")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuBindGroupReference(handle)
         new BindGroup(device, handle, refCount)
     interface System.IDisposable with
@@ -3125,18 +3123,16 @@ type BindGroupLayout(device : Device, handle : BindGroupLayoutHandle, refCount :
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuBindGroupLayoutRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("BindGroupLayout")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("BindGroupLayout")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuBindGroupLayoutReference(handle)
         new BindGroupLayout(device, handle, refCount)
     interface System.IDisposable with
@@ -3153,18 +3149,16 @@ type CommandBuffer(device : Device, handle : CommandBufferHandle, refCount : ref
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuCommandBufferRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("CommandBuffer")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("CommandBuffer")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuCommandBufferReference(handle)
         new CommandBuffer(device, handle, refCount)
     interface System.IDisposable with
@@ -3181,18 +3175,16 @@ type PipelineLayout(device : Device, handle : PipelineLayoutHandle, refCount : r
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuPipelineLayoutRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("PipelineLayout")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("PipelineLayout")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuPipelineLayoutReference(handle)
         new PipelineLayout(device, handle, refCount)
     interface System.IDisposable with
@@ -3209,19 +3201,16 @@ type QuerySet(device : Device, handle : QuerySetHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
-            if r = 0 then DawnRaw.wgpuQuerySetDestroy(handle)
             DawnRaw.wgpuQuerySetRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("QuerySet")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("QuerySet")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuQuerySetReference(handle)
         new QuerySet(device, handle, refCount)
     interface System.IDisposable with
@@ -3238,18 +3227,16 @@ type RenderBundle(device : Device, handle : RenderBundleHandle, refCount : ref<i
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderBundleRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("RenderBundle")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("RenderBundle")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuRenderBundleReference(handle)
         new RenderBundle(device, handle, refCount)
     interface System.IDisposable with
@@ -3266,18 +3253,16 @@ type Sampler(device : Device, handle : SamplerHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuSamplerRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Sampler")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Sampler")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuSamplerReference(handle)
         new Sampler(device, handle, refCount)
     interface System.IDisposable with
@@ -3294,18 +3279,16 @@ type ShaderModule(device : Device, handle : ShaderModuleHandle, refCount : ref<i
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuShaderModuleRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("ShaderModule")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("ShaderModule")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuShaderModuleReference(handle)
         new ShaderModule(device, handle, refCount)
     interface System.IDisposable with
@@ -3320,21 +3303,18 @@ type Surface(device : Device, handle : SurfaceHandle, refCount : ref<int>) =
     member x.IsDisposed = isDisposed
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
-            printfn "release shader %A" handle.Handle
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuSurfaceRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Surface")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Surface")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuSurfaceReference(handle)
         new Surface(device, handle, refCount)
     interface System.IDisposable with
@@ -3351,18 +3331,16 @@ type TextureView(device : Device, handle : TextureViewHandle, refCount : ref<int
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuTextureViewRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("TextureView")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("TextureView")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuTextureViewReference(handle)
         new TextureView(device, handle, refCount)
     interface System.IDisposable with
@@ -3379,24 +3357,22 @@ type ComputePipeline(device : Device, handle : ComputePipelineHandle, refCount :
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuComputePipelineRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("ComputePipeline")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("ComputePipeline")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuComputePipelineReference(handle)
         new ComputePipeline(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : ComputePipelineHandle) = new ComputePipeline(device, handle, ref 1)
-    member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
+    member x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
         new BindGroupLayout(x.Device, DawnRaw.wgpuComputePipelineGetBindGroupLayout(x.Handle, _GroupIndex))
 [<AllowNullLiteral>]
@@ -3410,24 +3386,22 @@ type Instance(device : Device, handle : InstanceHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuInstanceRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Instance")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Instance")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuInstanceReference(handle)
         new Instance(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : InstanceHandle) = new Instance(device, handle, ref 1)
-    member inline x.CreateSurface() : Surface = 
+    member x.CreateSurface() : Surface = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUSurfaceDescriptor>
             _DescriptorValue.Next <- 0n
@@ -3445,7 +3419,7 @@ type Instance(device : Device, handle : InstanceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateSurface(Descriptor : SurfaceDescriptor) : Surface = 
+    member x.CreateSurface(Descriptor : SurfaceDescriptor) : Surface = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUSurfaceDescriptor>
             _DescriptorValue.Next <- 0n
@@ -3473,26 +3447,23 @@ type RenderPipeline(device : Device, handle : RenderPipelineHandle, refCount : r
     member private x.Dispose(disposing : bool) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
-            printfn "release pipeline %A" handle.Handle
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderPipelineRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("RenderPipeline")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("RenderPipeline")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuRenderPipelineReference(handle)
         new RenderPipeline(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : RenderPipelineHandle) = new RenderPipeline(device, handle, ref 1)
-    member inline x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
+    member x.GetBindGroupLayout(GroupIndex : int) : BindGroupLayout = 
         let _GroupIndex = GroupIndex
         new BindGroupLayout(x.Device, DawnRaw.wgpuRenderPipelineGetBindGroupLayout(x.Handle, _GroupIndex))
 [<AllowNullLiteral>]
@@ -3506,32 +3477,30 @@ type SwapChain(device : Device, handle : SwapChainHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuSwapChainRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("SwapChain")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("SwapChain")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuSwapChainReference(handle)
         new SwapChain(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : SwapChainHandle) = new SwapChain(device, handle, ref 1)
-    member inline x.Configure(Format : TextureFormat, AllowedUsage : TextureUsage, Width : int, Height : int) : unit = 
+    member x.Configure(Format : TextureFormat, AllowedUsage : TextureUsage, Width : int, Height : int) : unit = 
         let _Format = Format
         let _AllowedUsage = AllowedUsage
         let _Width = Width
         let _Height = Height
         DawnRaw.wgpuSwapChainConfigure(x.Handle, _Format, _AllowedUsage, _Width, _Height)
-    member inline x.GetCurrentTextureView() : TextureView = 
+    member x.GetCurrentTextureView() : TextureView = 
         new TextureView(x.Device, DawnRaw.wgpuSwapChainGetCurrentTextureView(x.Handle))
-    member inline x.Present() : unit = 
+    member x.Present() : unit = 
         DawnRaw.wgpuSwapChainPresent(x.Handle)
 [<AllowNullLiteral>]
 type Buffer(device : Device, handle : BufferHandle, refCount : ref<int>) = 
@@ -3544,28 +3513,22 @@ type Buffer(device : Device, handle : BufferHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            printfn "release buffer %A" handle.Handle
-            if disposing then System.GC.SuppressFinalize x
-            if r = 0 then 
-                printfn "delete buffer %A" handle.Handle
-                DawnRaw.wgpuBufferDestroy(handle)
             DawnRaw.wgpuBufferRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Buffer")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Buffer")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuBufferReference(handle)
         new Buffer(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : BufferHandle) = new Buffer(device, handle, ref 1)
-    member inline x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback) : unit = 
+    member x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback) : unit = 
         let _Mode = Mode
         let _Offset = Offset
         let _Size = Size
@@ -3580,7 +3543,7 @@ type Buffer(device : Device, handle : BufferHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuBufferMapAsync(x.Handle, _Mode, _Offset, _Size, _Callback, _Userdata)
-    member inline x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback, Userdata : nativeint) : unit = 
+    member x.MapAsync(Mode : MapMode, Offset : unativeint, Size : unativeint, Callback : BufferMapCallback, Userdata : nativeint) : unit = 
         let _Mode = Mode
         let _Offset = Offset
         let _Size = Size
@@ -3595,31 +3558,31 @@ type Buffer(device : Device, handle : BufferHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
         DawnRaw.wgpuBufferMapAsync(x.Handle, _Mode, _Offset, _Size, _Callback, _Userdata)
-    member inline x.GetMappedRange() : nativeint = 
+    member x.GetMappedRange() : nativeint = 
         let _Offset = 0un
         let _Size = 0un
         DawnRaw.wgpuBufferGetMappedRange(x.Handle, _Offset, _Size)
-    member inline x.GetMappedRange(Offset : unativeint) : nativeint = 
+    member x.GetMappedRange(Offset : unativeint) : nativeint = 
         let _Offset = Offset
         let _Size = 0un
         DawnRaw.wgpuBufferGetMappedRange(x.Handle, _Offset, _Size)
-    member inline x.GetMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
+    member x.GetMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuBufferGetMappedRange(x.Handle, _Offset, _Size)
-    member inline x.GetConstMappedRange() : nativeint = 
+    member x.GetConstMappedRange() : nativeint = 
         let _Offset = 0un
         let _Size = 0un
         DawnRaw.wgpuBufferGetConstMappedRange(x.Handle, _Offset, _Size)
-    member inline x.GetConstMappedRange(Offset : unativeint) : nativeint = 
+    member x.GetConstMappedRange(Offset : unativeint) : nativeint = 
         let _Offset = Offset
         let _Size = 0un
         DawnRaw.wgpuBufferGetConstMappedRange(x.Handle, _Offset, _Size)
-    member inline x.GetConstMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
+    member x.GetConstMappedRange(Offset : unativeint, Size : unativeint) : nativeint = 
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuBufferGetConstMappedRange(x.Handle, _Offset, _Size)
-    member inline x.Unmap() : unit = 
+    member x.Unmap() : unit = 
         DawnRaw.wgpuBufferUnmap(x.Handle)
 [<AllowNullLiteral>]
 type Fence(device : Device, handle : FenceHandle, refCount : ref<int>) = 
@@ -3632,26 +3595,24 @@ type Fence(device : Device, handle : FenceHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuFenceRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Fence")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Fence")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuFenceReference(handle)
         new Fence(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : FenceHandle) = new Fence(device, handle, ref 1)
-    member inline x.GetCompletedValue() : uint64 = 
+    member x.GetCompletedValue() : uint64 = 
         DawnRaw.wgpuFenceGetCompletedValue(x.Handle)
-    member inline x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback) : unit = 
+    member x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback) : unit = 
         let _Value = Value
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _CallbackFunction (Status : FenceCompletionStatus) (Userdata : nativeint) = 
@@ -3664,7 +3625,7 @@ type Fence(device : Device, handle : FenceHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuFenceOnCompletion(x.Handle, _Value, _Callback, _Userdata)
-    member inline x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback, Userdata : nativeint) : unit = 
+    member x.OnCompletion(Value : uint64, Callback : FenceOnCompletionCallback, Userdata : nativeint) : unit = 
         let _Value = Value
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _CallbackFunction (Status : FenceCompletionStatus) (Userdata : nativeint) = 
@@ -3688,25 +3649,22 @@ type Texture(device : Device, handle : TextureHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
-            if r = 0 then DawnRaw.wgpuTextureDestroy(handle)
             DawnRaw.wgpuTextureRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Texture")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Texture")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuTextureReference(handle)
         new Texture(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : TextureHandle) = new Texture(device, handle, ref 1)
-    member inline x.CreateView() : TextureView = 
+    member x.CreateView() : TextureView = 
         let inline _LabelCont (_Label) = 
             let _Format = TextureViewDescriptor.Default.Format
             let _Dimension = TextureViewDescriptor.Default.Dimension
@@ -3738,7 +3696,7 @@ type Texture(device : Device, handle : TextureHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateView(Descriptor : TextureViewDescriptor) : TextureView = 
+    member x.CreateView(Descriptor : TextureViewDescriptor) : TextureView = 
         let inline _LabelCont (_Label) = 
             let _Format = Descriptor.Format
             let _Dimension = Descriptor.Dimension
@@ -3781,24 +3739,22 @@ type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle, refC
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuComputePassEncoderRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("ComputePassEncoder")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("ComputePassEncoder")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuComputePassEncoderReference(handle)
         new ComputePassEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : ComputePassEncoderHandle) = new ComputePassEncoder(device, handle, ref 1)
-    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
         let inline _MarkerLabelCont (_MarkerLabel) = 
             DawnRaw.wgpuComputePassEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
         if not (isNull MarkerLabel) then
@@ -3810,9 +3766,9 @@ type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle, refC
             _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
         else
             _MarkerLabelCont 0n
-    member inline x.PopDebugGroup() : unit = 
+    member x.PopDebugGroup() : unit = 
         DawnRaw.wgpuComputePassEncoderPopDebugGroup(x.Handle)
-    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+    member x.PushDebugGroup(GroupLabel : string) : unit = 
         let inline _GroupLabelCont (_GroupLabel) = 
             DawnRaw.wgpuComputePassEncoderPushDebugGroup(x.Handle, _GroupLabel)
         if not (isNull GroupLabel) then
@@ -3824,39 +3780,39 @@ type ComputePassEncoder(device : Device, handle : ComputePassEncoderHandle, refC
             _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
         else
             _GroupLabelCont 0n
-    member inline x.SetPipeline(Pipeline : ComputePipeline) : unit = 
+    member x.SetPipeline(Pipeline : ComputePipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then ComputePipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuComputePassEncoderSetPipeline(x.Handle, _Pipeline)
-    member inline x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
+    member x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
         let _GroupIndex = GroupIndex
         let _Group = (if isNull Group then BindGroupHandle.Null else Group.Handle)
         use _DynamicOffsets = fixed DynamicOffsets
         let _DynamicOffsetsCount = DynamicOffsets.Length
         DawnRaw.wgpuComputePassEncoderSetBindGroup(x.Handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
-    member inline x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
+    member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _QueryIndex = QueryIndex
         DawnRaw.wgpuComputePassEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
-    member inline x.Dispatch(X : int) : unit = 
+    member x.Dispatch(X : int) : unit = 
         let _X = X
         let _Y = 1
         let _Z = 1
         DawnRaw.wgpuComputePassEncoderDispatch(x.Handle, _X, _Y, _Z)
-    member inline x.Dispatch(X : int, Y : int) : unit = 
+    member x.Dispatch(X : int, Y : int) : unit = 
         let _X = X
         let _Y = Y
         let _Z = 1
         DawnRaw.wgpuComputePassEncoderDispatch(x.Handle, _X, _Y, _Z)
-    member inline x.Dispatch(X : int, Y : int, Z : int) : unit = 
+    member x.Dispatch(X : int, Y : int, Z : int) : unit = 
         let _X = X
         let _Y = Y
         let _Z = Z
         DawnRaw.wgpuComputePassEncoderDispatch(x.Handle, _X, _Y, _Z)
-    member inline x.DispatchIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+    member x.DispatchIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
         DawnRaw.wgpuComputePassEncoderDispatchIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
-    member inline x.EndPass() : unit = 
+    member x.EndPass() : unit = 
         DawnRaw.wgpuComputePassEncoderEndPass(x.Handle)
 [<AllowNullLiteral>]
 type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle, refCount : ref<int>) = 
@@ -3869,100 +3825,98 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle, re
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderBundleEncoderRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("RenderBundleEncoder")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("RenderBundleEncoder")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuRenderBundleEncoderReference(handle)
         new RenderBundleEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : RenderBundleEncoderHandle) = new RenderBundleEncoder(device, handle, ref 1)
-    member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
+    member x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuRenderBundleEncoderSetPipeline(x.Handle, _Pipeline)
-    member inline x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
+    member x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
         let _GroupIndex = GroupIndex
         let _Group = (if isNull Group then BindGroupHandle.Null else Group.Handle)
         use _DynamicOffsets = fixed DynamicOffsets
         let _DynamicOffsetsCount = DynamicOffsets.Length
         DawnRaw.wgpuRenderBundleEncoderSetBindGroup(x.Handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
-    member inline x.Draw(VertexCount : int) : unit = 
+    member x.Draw(VertexCount : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = 1
         let _FirstVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.Draw(VertexCount : int, InstanceCount : int) : unit = 
+    member x.Draw(VertexCount : int, InstanceCount : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int) : unit = 
+    member x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = FirstVertex
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
+    member x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = FirstVertex
         let _FirstInstance = FirstInstance
         DawnRaw.wgpuRenderBundleEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int) : unit = 
+    member x.DrawIndexed(IndexCount : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = 1
         let _FirstIndex = 0
         let _BaseVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = 0
         let _BaseVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = BaseVertex
         let _FirstInstance = 0
         DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = BaseVertex
         let _FirstInstance = FirstInstance
         DawnRaw.wgpuRenderBundleEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+    member x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
         DawnRaw.wgpuRenderBundleEncoderDrawIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
-    member inline x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+    member x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
         DawnRaw.wgpuRenderBundleEncoderDrawIndexedIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
-    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
         let inline _MarkerLabelCont (_MarkerLabel) = 
             DawnRaw.wgpuRenderBundleEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
         if not (isNull MarkerLabel) then
@@ -3974,9 +3928,9 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle, re
             _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
         else
             _MarkerLabelCont 0n
-    member inline x.PopDebugGroup() : unit = 
+    member x.PopDebugGroup() : unit = 
         DawnRaw.wgpuRenderBundleEncoderPopDebugGroup(x.Handle)
-    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+    member x.PushDebugGroup(GroupLabel : string) : unit = 
         let inline _GroupLabelCont (_GroupLabel) = 
             DawnRaw.wgpuRenderBundleEncoderPushDebugGroup(x.Handle, _GroupLabel)
         if not (isNull GroupLabel) then
@@ -3988,58 +3942,58 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle, re
             _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
         else
             _GroupLabelCont 0n
-    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer) : unit = 
+    member x.SetVertexBuffer(Slot : int, Buffer : Buffer) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = 0UL
         let _Size = 0UL
         DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
-    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64) : unit = 
+    member x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = 0UL
         DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
-    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+    member x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuRenderBundleEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBuffer(Buffer : Buffer) : unit = 
+    member x.SetIndexBuffer(Buffer : Buffer) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = 0UL
         let _Size = 0UL
         DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64) : unit = 
+    member x.SetIndexBuffer(Buffer : Buffer, Offset : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = 0UL
         DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+    member x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuRenderBundleEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat) : unit = 
+    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = 0UL
         let _Size = 0UL
         DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
-    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64) : unit = 
+    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = Offset
         let _Size = 0UL
         DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
-    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
+    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuRenderBundleEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
-    member inline x.Finish() : RenderBundle = 
+    member x.Finish() : RenderBundle = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPURenderBundleDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4057,7 +4011,7 @@ type RenderBundleEncoder(device : Device, handle : RenderBundleEncoderHandle, re
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.Finish(Descriptor : RenderBundleDescriptor) : RenderBundle = 
+    member x.Finish(Descriptor : RenderBundleDescriptor) : RenderBundle = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPURenderBundleDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4086,107 +4040,105 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle, refCou
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuRenderPassEncoderRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("RenderPassEncoder")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("RenderPassEncoder")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuRenderPassEncoderReference(handle)
         new RenderPassEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : RenderPassEncoderHandle) = new RenderPassEncoder(device, handle, ref 1)
-    member inline x.SetPipeline(Pipeline : RenderPipeline) : unit = 
+    member x.SetPipeline(Pipeline : RenderPipeline) : unit = 
         let _Pipeline = (if isNull Pipeline then RenderPipelineHandle.Null else Pipeline.Handle)
         DawnRaw.wgpuRenderPassEncoderSetPipeline(x.Handle, _Pipeline)
-    member inline x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
+    member x.SetBindGroup(GroupIndex : int, Group : BindGroup, DynamicOffsets : array<int>) : unit = 
         let _GroupIndex = GroupIndex
         let _Group = (if isNull Group then BindGroupHandle.Null else Group.Handle)
         use _DynamicOffsets = fixed DynamicOffsets
         let _DynamicOffsetsCount = DynamicOffsets.Length
         DawnRaw.wgpuRenderPassEncoderSetBindGroup(x.Handle, _GroupIndex, _Group, _DynamicOffsetsCount, _DynamicOffsets)
-    member inline x.Draw(VertexCount : int) : unit = 
+    member x.Draw(VertexCount : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = 1
         let _FirstVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.Draw(VertexCount : int, InstanceCount : int) : unit = 
+    member x.Draw(VertexCount : int, InstanceCount : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int) : unit = 
+    member x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = FirstVertex
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
+    member x.Draw(VertexCount : int, InstanceCount : int, FirstVertex : int, FirstInstance : int) : unit = 
         let _VertexCount = VertexCount
         let _InstanceCount = InstanceCount
         let _FirstVertex = FirstVertex
         let _FirstInstance = FirstInstance
         DawnRaw.wgpuRenderPassEncoderDraw(x.Handle, _VertexCount, _InstanceCount, _FirstVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int) : unit = 
+    member x.DrawIndexed(IndexCount : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = 1
         let _FirstIndex = 0
         let _BaseVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = 0
         let _BaseVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = 0
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = BaseVertex
         let _FirstInstance = 0
         DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
+    member x.DrawIndexed(IndexCount : int, InstanceCount : int, FirstIndex : int, BaseVertex : int32, FirstInstance : int) : unit = 
         let _IndexCount = IndexCount
         let _InstanceCount = InstanceCount
         let _FirstIndex = FirstIndex
         let _BaseVertex = BaseVertex
         let _FirstInstance = FirstInstance
         DawnRaw.wgpuRenderPassEncoderDrawIndexed(x.Handle, _IndexCount, _InstanceCount, _FirstIndex, _BaseVertex, _FirstInstance)
-    member inline x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+    member x.DrawIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
         DawnRaw.wgpuRenderPassEncoderDrawIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
-    member inline x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
+    member x.DrawIndexedIndirect(IndirectBuffer : Buffer, IndirectOffset : uint64) : unit = 
         let _IndirectBuffer = (if isNull IndirectBuffer then BufferHandle.Null else IndirectBuffer.Handle)
         let _IndirectOffset = IndirectOffset
         DawnRaw.wgpuRenderPassEncoderDrawIndexedIndirect(x.Handle, _IndirectBuffer, _IndirectOffset)
-    member inline x.ExecuteBundles(Bundles : array<RenderBundle>) : unit = 
+    member x.ExecuteBundles(Bundles : array<RenderBundle>) : unit = 
         let _BundlesCount = Bundles.Length
         let _Bundles = NativePtr.stackalloc _BundlesCount
         for i in 0 .. _BundlesCount-1 do
             if isNull Bundles.[i] then NativePtr.set _Bundles i RenderBundleHandle.Null
             else NativePtr.set _Bundles i Bundles.[i].Handle
         DawnRaw.wgpuRenderPassEncoderExecuteBundles(x.Handle, _BundlesCount, _Bundles)
-    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
         let inline _MarkerLabelCont (_MarkerLabel) = 
             DawnRaw.wgpuRenderPassEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
         if not (isNull MarkerLabel) then
@@ -4198,9 +4150,9 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle, refCou
             _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
         else
             _MarkerLabelCont 0n
-    member inline x.PopDebugGroup() : unit = 
+    member x.PopDebugGroup() : unit = 
         DawnRaw.wgpuRenderPassEncoderPopDebugGroup(x.Handle)
-    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+    member x.PushDebugGroup(GroupLabel : string) : unit = 
         let inline _GroupLabelCont (_GroupLabel) = 
             DawnRaw.wgpuRenderPassEncoderPushDebugGroup(x.Handle, _GroupLabel)
         if not (isNull GroupLabel) then
@@ -4212,10 +4164,10 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle, refCou
             _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
         else
             _GroupLabelCont 0n
-    member inline x.SetStencilReference(Reference : int) : unit = 
+    member x.SetStencilReference(Reference : int) : unit = 
         let _Reference = Reference
         DawnRaw.wgpuRenderPassEncoderSetStencilReference(x.Handle, _Reference)
-    member inline x.SetBlendColor(Color : Color) : unit = 
+    member x.SetBlendColor(Color : Color) : unit = 
         let _R = Color.R
         let _G = Color.G
         let _B = Color.B
@@ -4229,7 +4181,7 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle, refCou
         let _Color = NativePtr.stackalloc 1
         NativePtr.write _Color _ColorValue
         DawnRaw.wgpuRenderPassEncoderSetBlendColor(x.Handle, _Color)
-    member inline x.SetViewport(X : float32, Y : float32, Width : float32, Height : float32, MinDepth : float32, MaxDepth : float32) : unit = 
+    member x.SetViewport(X : float32, Y : float32, Width : float32, Height : float32, MinDepth : float32, MaxDepth : float32) : unit = 
         let _X = X
         let _Y = Y
         let _Width = Width
@@ -4237,68 +4189,68 @@ type RenderPassEncoder(device : Device, handle : RenderPassEncoderHandle, refCou
         let _MinDepth = MinDepth
         let _MaxDepth = MaxDepth
         DawnRaw.wgpuRenderPassEncoderSetViewport(x.Handle, _X, _Y, _Width, _Height, _MinDepth, _MaxDepth)
-    member inline x.SetScissorRect(X : int, Y : int, Width : int, Height : int) : unit = 
+    member x.SetScissorRect(X : int, Y : int, Width : int, Height : int) : unit = 
         let _X = X
         let _Y = Y
         let _Width = Width
         let _Height = Height
         DawnRaw.wgpuRenderPassEncoderSetScissorRect(x.Handle, _X, _Y, _Width, _Height)
-    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer) : unit = 
+    member x.SetVertexBuffer(Slot : int, Buffer : Buffer) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = 0UL
         let _Size = 0UL
         DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
-    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64) : unit = 
+    member x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = 0UL
         DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
-    member inline x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+    member x.SetVertexBuffer(Slot : int, Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Slot = Slot
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuRenderPassEncoderSetVertexBuffer(x.Handle, _Slot, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBuffer(Buffer : Buffer) : unit = 
+    member x.SetIndexBuffer(Buffer : Buffer) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = 0UL
         let _Size = 0UL
         DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64) : unit = 
+    member x.SetIndexBuffer(Buffer : Buffer, Offset : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = 0UL
         DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
+    member x.SetIndexBuffer(Buffer : Buffer, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuRenderPassEncoderSetIndexBuffer(x.Handle, _Buffer, _Offset, _Size)
-    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat) : unit = 
+    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = 0UL
         let _Size = 0UL
         DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
-    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64) : unit = 
+    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = Offset
         let _Size = 0UL
         DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
-    member inline x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
+    member x.SetIndexBufferWithFormat(Buffer : Buffer, Format : IndexFormat, Offset : uint64, Size : uint64) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _Format = Format
         let _Offset = Offset
         let _Size = Size
         DawnRaw.wgpuRenderPassEncoderSetIndexBufferWithFormat(x.Handle, _Buffer, _Format, _Offset, _Size)
-    member inline x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
+    member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _QueryIndex = QueryIndex
         DawnRaw.wgpuRenderPassEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
-    member inline x.EndPass() : unit = 
+    member x.EndPass() : unit = 
         DawnRaw.wgpuRenderPassEncoderEndPass(x.Handle)
 [<AllowNullLiteral>]
 type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : ref<int>) = 
@@ -4311,24 +4263,22 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuCommandEncoderRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("CommandEncoder")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("CommandEncoder")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuCommandEncoderReference(handle)
         new CommandEncoder(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : CommandEncoderHandle) = new CommandEncoder(device, handle, ref 1)
-    member inline x.Finish() : CommandBuffer = 
+    member x.Finish() : CommandBuffer = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUCommandBufferDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4346,7 +4296,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.Finish(Descriptor : CommandBufferDescriptor) : CommandBuffer = 
+    member x.Finish(Descriptor : CommandBufferDescriptor) : CommandBuffer = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUCommandBufferDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4364,7 +4314,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.BeginComputePass() : ComputePassEncoder = 
+    member x.BeginComputePass() : ComputePassEncoder = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUComputePassDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4382,7 +4332,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.BeginComputePass(Descriptor : ComputePassDescriptor) : ComputePassEncoder = 
+    member x.BeginComputePass(Descriptor : ComputePassDescriptor) : ComputePassEncoder = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUComputePassDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4400,7 +4350,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.BeginRenderPass(Descriptor : RenderPassDescriptor) : RenderPassEncoder = 
+    member x.BeginRenderPass(Descriptor : RenderPassDescriptor) : RenderPassEncoder = 
         let inline _LabelCont (_Label) = 
             let _ColorAttachmentsCount = if isNull Descriptor.ColorAttachments then 0 else Descriptor.ColorAttachments.Length
             let rec _ColorAttachmentsCont (_ColorAttachmentsinputs : array<RenderPassColorAttachmentDescriptor>) (_ColorAttachmentsoutputs : array<DawnRaw.WGPURenderPassColorAttachmentDescriptor>) (_ColorAttachmentsi : int) =
@@ -4479,14 +4429,14 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CopyBufferToBuffer(Source : Buffer, SourceOffset : uint64, Destination : Buffer, DestinationOffset : uint64, Size : uint64) : unit = 
+    member x.CopyBufferToBuffer(Source : Buffer, SourceOffset : uint64, Destination : Buffer, DestinationOffset : uint64, Size : uint64) : unit = 
         let _Source = (if isNull Source then BufferHandle.Null else Source.Handle)
         let _SourceOffset = SourceOffset
         let _Destination = (if isNull Destination then BufferHandle.Null else Destination.Handle)
         let _DestinationOffset = DestinationOffset
         let _Size = Size
         DawnRaw.wgpuCommandEncoderCopyBufferToBuffer(x.Handle, _Source, _SourceOffset, _Destination, _DestinationOffset, _Size)
-    member inline x.CopyBufferToTexture(Source : BufferCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit = 
+    member x.CopyBufferToTexture(Source : BufferCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit = 
         let _Offset = Source.Layout.Offset
         let _BytesPerRow = Source.Layout.BytesPerRow
         let _RowsPerImage = Source.Layout.RowsPerImage
@@ -4535,7 +4485,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
         let _CopySize = NativePtr.stackalloc 1
         NativePtr.write _CopySize _CopySizeValue
         DawnRaw.wgpuCommandEncoderCopyBufferToTexture(x.Handle, _Source, _Destination, _CopySize)
-    member inline x.CopyTextureToBuffer(Source : TextureCopyView, Destination : BufferCopyView, CopySize : Extent3D) : unit = 
+    member x.CopyTextureToBuffer(Source : TextureCopyView, Destination : BufferCopyView, CopySize : Extent3D) : unit = 
         let _Texture = (if isNull Source.Texture then TextureHandle.Null else Source.Texture.Handle)
         let _MipLevel = Source.MipLevel
         let _X = Source.Origin.X
@@ -4584,7 +4534,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
         let _CopySize = NativePtr.stackalloc 1
         NativePtr.write _CopySize _CopySizeValue
         DawnRaw.wgpuCommandEncoderCopyTextureToBuffer(x.Handle, _Source, _Destination, _CopySize)
-    member inline x.CopyTextureToTexture(Source : TextureCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit = 
+    member x.CopyTextureToTexture(Source : TextureCopyView, Destination : TextureCopyView, CopySize : Extent3D) : unit = 
         let _Texture = (if isNull Source.Texture then TextureHandle.Null else Source.Texture.Handle)
         let _MipLevel = Source.MipLevel
         let _X = Source.Origin.X
@@ -4636,7 +4586,7 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
         let _CopySize = NativePtr.stackalloc 1
         NativePtr.write _CopySize _CopySizeValue
         DawnRaw.wgpuCommandEncoderCopyTextureToTexture(x.Handle, _Source, _Destination, _CopySize)
-    member inline x.InsertDebugMarker(MarkerLabel : string) : unit = 
+    member x.InsertDebugMarker(MarkerLabel : string) : unit = 
         let inline _MarkerLabelCont (_MarkerLabel) = 
             DawnRaw.wgpuCommandEncoderInsertDebugMarker(x.Handle, _MarkerLabel)
         if not (isNull MarkerLabel) then
@@ -4648,9 +4598,9 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _MarkerLabelCont (NativePtr.toNativeInt _MarkerLabelPtr)
         else
             _MarkerLabelCont 0n
-    member inline x.PopDebugGroup() : unit = 
+    member x.PopDebugGroup() : unit = 
         DawnRaw.wgpuCommandEncoderPopDebugGroup(x.Handle)
-    member inline x.PushDebugGroup(GroupLabel : string) : unit = 
+    member x.PushDebugGroup(GroupLabel : string) : unit = 
         let inline _GroupLabelCont (_GroupLabel) = 
             DawnRaw.wgpuCommandEncoderPushDebugGroup(x.Handle, _GroupLabel)
         if not (isNull GroupLabel) then
@@ -4662,14 +4612,14 @@ type CommandEncoder(device : Device, handle : CommandEncoderHandle, refCount : r
             _GroupLabelCont (NativePtr.toNativeInt _GroupLabelPtr)
         else
             _GroupLabelCont 0n
-    member inline x.ResolveQuerySet(QuerySet : QuerySet, FirstQuery : int, QueryCount : int, Destination : Buffer, DestinationOffset : uint64) : unit = 
+    member x.ResolveQuerySet(QuerySet : QuerySet, FirstQuery : int, QueryCount : int, Destination : Buffer, DestinationOffset : uint64) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _FirstQuery = FirstQuery
         let _QueryCount = QueryCount
         let _Destination = (if isNull Destination then BufferHandle.Null else Destination.Handle)
         let _DestinationOffset = DestinationOffset
         DawnRaw.wgpuCommandEncoderResolveQuerySet(x.Handle, _QuerySet, _FirstQuery, _QueryCount, _Destination, _DestinationOffset)
-    member inline x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
+    member x.WriteTimestamp(QuerySet : QuerySet, QueryIndex : int) : unit = 
         let _QuerySet = (if isNull QuerySet then QuerySetHandle.Null else QuerySet.Handle)
         let _QueryIndex = QueryIndex
         DawnRaw.wgpuCommandEncoderWriteTimestamp(x.Handle, _QuerySet, _QueryIndex)
@@ -4684,35 +4634,33 @@ type Queue(device : Device, handle : QueueHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuQueueRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Queue")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Queue")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuQueueReference(handle)
         new Queue(device, handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(device : Device, handle : QueueHandle) = new Queue(device, handle, ref 1)
-    member inline x.Submit(Commands : array<CommandBuffer>) : unit = 
+    member x.Submit(Commands : array<CommandBuffer>) : unit = 
         let _CommandsCount = Commands.Length
         let _Commands = NativePtr.stackalloc _CommandsCount
         for i in 0 .. _CommandsCount-1 do
             if isNull Commands.[i] then NativePtr.set _Commands i CommandBufferHandle.Null
             else NativePtr.set _Commands i Commands.[i].Handle
         DawnRaw.wgpuQueueSubmit(x.Handle, _CommandsCount, _Commands)
-    member inline x.Signal(Fence : Fence, SignalValue : uint64) : unit = 
+    member x.Signal(Fence : Fence, SignalValue : uint64) : unit = 
         let _Fence = (if isNull Fence then FenceHandle.Null else Fence.Handle)
         let _SignalValue = SignalValue
         DawnRaw.wgpuQueueSignal(x.Handle, _Fence, _SignalValue)
-    member inline x.CreateFence() : Fence = 
+    member x.CreateFence() : Fence = 
         let inline _LabelCont (_Label) = 
             let _InitialValue = FenceDescriptor.Default.InitialValue
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUFenceDescriptor>
@@ -4732,7 +4680,7 @@ type Queue(device : Device, handle : QueueHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateFence(Descriptor : FenceDescriptor) : Fence = 
+    member x.CreateFence(Descriptor : FenceDescriptor) : Fence = 
         let inline _LabelCont (_Label) = 
             let _InitialValue = Descriptor.InitialValue
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUFenceDescriptor>
@@ -4752,13 +4700,13 @@ type Queue(device : Device, handle : QueueHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.WriteBuffer(Buffer : Buffer, BufferOffset : uint64, Data : nativeint, Size : unativeint) : unit = 
+    member x.WriteBuffer(Buffer : Buffer, BufferOffset : uint64, Data : nativeint, Size : unativeint) : unit = 
         let _Buffer = (if isNull Buffer then BufferHandle.Null else Buffer.Handle)
         let _BufferOffset = BufferOffset
         let _Data = Data
         let _Size = Size
         DawnRaw.wgpuQueueWriteBuffer(x.Handle, _Buffer, _BufferOffset, _Data, _Size)
-    member inline x.WriteTexture(Destination : TextureCopyView, Data : nativeint, DataSize : unativeint, DataLayout : TextureDataLayout, WriteSize : Extent3D) : unit = 
+    member x.WriteTexture(Destination : TextureCopyView, Data : nativeint, DataSize : unativeint, DataLayout : TextureDataLayout, WriteSize : Extent3D) : unit = 
         let _Texture = (if isNull Destination.Texture then TextureHandle.Null else Destination.Texture.Handle)
         let _MipLevel = Destination.MipLevel
         let _X = Destination.Origin.X
@@ -4813,24 +4761,22 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         if not isDisposed then 
             let r = Interlocked.Decrement(&refCount.contents)
             isDisposed <- true
-            if disposing then System.GC.SuppressFinalize x
             DawnRaw.wgpuDeviceRelease(handle)
     member x.Dispose() = x.Dispose(true)
-    override x.Finalize() = x.Dispose(false)
     member x.Clone() = 
         let mutable o = refCount.contents
         if o = 0 then raise <| System.ObjectDisposedException("Device")
-        let mutable n = Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+        let mutable n = Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         while o <> n do
             o <- n
             if o = 0 then raise <| System.ObjectDisposedException("Device")
-            n <- Interlocked.CompareExchange(&refCount.contents, o, o + 1)
+            n <- Interlocked.CompareExchange(&refCount.contents, o + 1, o)
         DawnRaw.wgpuDeviceReference(handle)
         new Device(handle, refCount)
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
     new(handle : DeviceHandle) = new Device(handle, ref 1)
-    member inline x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup = 
+    member x.CreateBindGroup(Descriptor : BindGroupDescriptor) : BindGroup = 
         let inline _LabelCont (_Label) = 
             let _Layout = (if isNull Descriptor.Layout then BindGroupLayoutHandle.Null else Descriptor.Layout.Handle)
             let _EntriesCount = if isNull Descriptor.Entries then 0 else Descriptor.Entries.Length
@@ -4874,7 +4820,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateBindGroupLayout(Descriptor : BindGroupLayoutDescriptor) : BindGroupLayout = 
+    member x.CreateBindGroupLayout(Descriptor : BindGroupLayoutDescriptor) : BindGroupLayout = 
         let inline _LabelCont (_Label) = 
             let _EntriesCount = if isNull Descriptor.Entries then 0 else Descriptor.Entries.Length
             let rec _EntriesCont (_Entriesinputs : array<BindGroupLayoutEntry>) (_Entriesoutputs : array<DawnRaw.WGPUBindGroupLayoutEntry>) (_Entriesi : int) =
@@ -4922,7 +4868,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateBuffer(Descriptor : BufferDescriptor) : Buffer = 
+    member x.CreateBuffer(Descriptor : BufferDescriptor) : Buffer = 
         let inline _LabelCont (_Label) = 
             let _Usage = Descriptor.Usage
             let _Size = Descriptor.Size
@@ -4946,9 +4892,9 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateErrorBuffer() : Buffer = 
+    member x.CreateErrorBuffer() : Buffer = 
         new Buffer(x, DawnRaw.wgpuDeviceCreateErrorBuffer(x.Handle))
-    member inline x.CreateCommandEncoder() : CommandEncoder = 
+    member x.CreateCommandEncoder() : CommandEncoder = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUCommandEncoderDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4966,7 +4912,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateCommandEncoder(Descriptor : CommandEncoderDescriptor) : CommandEncoder = 
+    member x.CreateCommandEncoder(Descriptor : CommandEncoderDescriptor) : CommandEncoder = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUCommandEncoderDescriptor>
             _DescriptorValue.Next <- 0n
@@ -4984,7 +4930,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateComputePipeline(Descriptor : ComputePipelineDescriptor) : ComputePipeline = 
+    member x.CreateComputePipeline(Descriptor : ComputePipelineDescriptor) : ComputePipeline = 
         let inline _LabelCont (_Label) = 
             let _Layout = (if isNull Descriptor.Layout then PipelineLayoutHandle.Null else Descriptor.Layout.Handle)
             let _Module = (if isNull Descriptor.ComputeStage.Module then ShaderModuleHandle.Null else Descriptor.ComputeStage.Module.Handle)
@@ -5021,7 +4967,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreatePipelineLayout(Descriptor : PipelineLayoutDescriptor) : PipelineLayout = 
+    member x.CreatePipelineLayout(Descriptor : PipelineLayoutDescriptor) : PipelineLayout = 
         let inline _LabelCont (_Label) = 
             let _BindGroupLayoutsCount = Descriptor.BindGroupLayouts.Length
             let _BindGroupLayouts = NativePtr.stackalloc _BindGroupLayoutsCount
@@ -5046,7 +4992,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateQuerySet(Descriptor : QuerySetDescriptor) : QuerySet = 
+    member x.CreateQuerySet(Descriptor : QuerySetDescriptor) : QuerySet = 
         let inline _LabelCont (_Label) = 
             let _Type = Descriptor.Type
             let _Count = Descriptor.Count
@@ -5079,7 +5025,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateRenderBundleEncoder(Descriptor : RenderBundleEncoderDescriptor) : RenderBundleEncoder = 
+    member x.CreateRenderBundleEncoder(Descriptor : RenderBundleEncoderDescriptor) : RenderBundleEncoder = 
         let inline _LabelCont (_Label) = 
             use _ColorFormats = fixed Descriptor.ColorFormats
             let _ColorFormatsCount = Descriptor.ColorFormats.Length
@@ -5105,7 +5051,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateRenderPipeline(Descriptor : RenderPipelineDescriptor) : RenderPipeline = 
+    member x.CreateRenderPipeline(Descriptor : RenderPipelineDescriptor) : RenderPipeline = 
         let inline _LabelCont (_Label) = 
             let _Layout = (if isNull Descriptor.Layout then PipelineLayoutHandle.Null else Descriptor.Layout.Handle)
             let _Module = (if isNull Descriptor.VertexStage.Module then ShaderModuleHandle.Null else Descriptor.VertexStage.Module.Handle)
@@ -5320,7 +5266,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateSampler() : Sampler = 
+    member x.CreateSampler() : Sampler = 
         let inline _LabelCont (_Label) = 
             let _AddressModeU = SamplerDescriptor.Default.AddressModeU
             let _AddressModeV = SamplerDescriptor.Default.AddressModeV
@@ -5356,7 +5302,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateSampler(Descriptor : SamplerDescriptor) : Sampler = 
+    member x.CreateSampler(Descriptor : SamplerDescriptor) : Sampler = 
         let inline _LabelCont (_Label) = 
             let _AddressModeU = Descriptor.AddressModeU
             let _AddressModeV = Descriptor.AddressModeV
@@ -5392,7 +5338,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateShaderModule() : ShaderModule = 
+    member x.CreateShaderModule() : ShaderModule = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUShaderModuleDescriptor>
             _DescriptorValue.Next <- 0n
@@ -5410,7 +5356,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateShaderModule(Descriptor : ShaderModuleDescriptor) : ShaderModule = 
+    member x.CreateShaderModule(Descriptor : ShaderModuleDescriptor) : ShaderModule = 
         let inline _LabelCont (_Label) = 
             let mutable _DescriptorValue = Unchecked.defaultof<DawnRaw.WGPUShaderModuleDescriptor>
             _DescriptorValue.Next <- 0n
@@ -5428,7 +5374,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateSwapChain(Surface : Surface, Descriptor : SwapChainDescriptor) : SwapChain = 
+    member x.CreateSwapChain(Surface : Surface, Descriptor : SwapChainDescriptor) : SwapChain = 
         let _Surface = (if isNull Surface then SurfaceHandle.Null else Surface.Handle)
         let inline _LabelCont (_Label) = 
             let _Usage = Descriptor.Usage
@@ -5459,7 +5405,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.CreateTexture(Descriptor : TextureDescriptor) : Texture = 
+    member x.CreateTexture(Descriptor : TextureDescriptor) : Texture = 
         let inline _LabelCont (_Label) = 
             let _Usage = Descriptor.Usage
             let _Dimension = Descriptor.Dimension
@@ -5496,9 +5442,9 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _LabelCont (NativePtr.toNativeInt _LabelPtr)
         else
             _LabelCont 0n
-    member inline x.GetDefaultQueue() : Queue = 
+    member x.GetDefaultQueue() : Queue = 
         new Queue(x, DawnRaw.wgpuDeviceGetDefaultQueue(x.Handle))
-    member inline x.InjectError(Type : ErrorType, Message : string) : unit = 
+    member x.InjectError(Type : ErrorType, Message : string) : unit = 
         let _Type = Type
         let inline _MessageCont (_Message) = 
             DawnRaw.wgpuDeviceInjectError(x.Handle, _Type, _Message)
@@ -5511,11 +5457,11 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
             _MessageCont (NativePtr.toNativeInt _MessagePtr)
         else
             _MessageCont 0n
-    member inline x.LoseForTesting() : unit = 
+    member x.LoseForTesting() : unit = 
         DawnRaw.wgpuDeviceLoseForTesting(x.Handle)
-    member inline x.Tick() : unit = 
+    member x.Tick() : unit = 
         DawnRaw.wgpuDeviceTick(x.Handle)
-    member inline x.SetUncapturedErrorCallback(Callback : ErrorCallback) : unit = 
+    member x.SetUncapturedErrorCallback(Callback : ErrorCallback) : unit = 
         let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
             let _Type = Type
             let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
@@ -5526,7 +5472,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuDeviceSetUncapturedErrorCallback(x.Handle, _Callback, _Userdata)
-    member inline x.SetUncapturedErrorCallback(Callback : ErrorCallback, Userdata : nativeint) : unit = 
+    member x.SetUncapturedErrorCallback(Callback : ErrorCallback, Userdata : nativeint) : unit = 
         let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
             let _Type = Type
             let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
@@ -5537,7 +5483,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
         DawnRaw.wgpuDeviceSetUncapturedErrorCallback(x.Handle, _Callback, _Userdata)
-    member inline x.SetDeviceLostCallback(Callback : DeviceLostCallback) : unit = 
+    member x.SetDeviceLostCallback(Callback : DeviceLostCallback) : unit = 
         let _CallbackFunction (Message : nativeint) (Userdata : nativeint) = 
             let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
             let _Userdata = Userdata
@@ -5547,7 +5493,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuDeviceSetDeviceLostCallback(x.Handle, _Callback, _Userdata)
-    member inline x.SetDeviceLostCallback(Callback : DeviceLostCallback, Userdata : nativeint) : unit = 
+    member x.SetDeviceLostCallback(Callback : DeviceLostCallback, Userdata : nativeint) : unit = 
         let _CallbackFunction (Message : nativeint) (Userdata : nativeint) = 
             let _Message = System.Runtime.InteropServices.Marshal.PtrToStringAnsi Message
             let _Userdata = Userdata
@@ -5557,10 +5503,10 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = Userdata
         DawnRaw.wgpuDeviceSetDeviceLostCallback(x.Handle, _Callback, _Userdata)
-    member inline x.PushErrorScope(Filter : ErrorFilter) : unit = 
+    member x.PushErrorScope(Filter : ErrorFilter) : unit = 
         let _Filter = Filter
         DawnRaw.wgpuDevicePushErrorScope(x.Handle, _Filter)
-    member inline x.PopErrorScope(Callback : ErrorCallback) : bool = 
+    member x.PopErrorScope(Callback : ErrorCallback) : bool = 
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
             let _Type = Type
@@ -5573,7 +5519,7 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         let _Callback = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_CallbackDel)
         let _Userdata = 0n
         DawnRaw.wgpuDevicePopErrorScope(x.Handle, _Callback, _Userdata) <> 0
-    member inline x.PopErrorScope(Callback : ErrorCallback, Userdata : nativeint) : bool = 
+    member x.PopErrorScope(Callback : ErrorCallback, Userdata : nativeint) : bool = 
         let mutable _CallbackGC = Unchecked.defaultof<System.Runtime.InteropServices.GCHandle>
         let _CallbackFunction (Type : ErrorType) (Message : nativeint) (Userdata : nativeint) = 
             let _Type = Type
