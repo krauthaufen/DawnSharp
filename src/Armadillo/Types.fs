@@ -47,7 +47,7 @@ type StencilMode =
 
 type BufferDescriptor =
     | Data of Data
-    | Buffer of fmt : VertexFormat * buffer : Buffer * offset : nativeint * size : nativeint
+    | Buffer of fmt : VertexFormat * slotCnt : int * buffer : Buffer * offset : nativeint * size : nativeint
 
     member x.Stride =
         VertexFormat.size x.Format // TODO!!!!
@@ -65,4 +65,9 @@ type BufferDescriptor =
     member x.Format =
         match x with
         | Data d -> d.Format
-        | Buffer(f,_,_,_) -> f
+        | Buffer(f,_,_,_,_) -> f
+        
+    member x.SlotCount =
+        match x with
+        | Data d -> d.SlotCount
+        | Buffer(_,c,_,_,_) -> c

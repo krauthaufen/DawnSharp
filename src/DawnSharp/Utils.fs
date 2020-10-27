@@ -116,22 +116,25 @@ module VertexFormat =
 
     let private formats =
         Dict.ofArray [|
-            typeof<C4b>, VertexFormat.UChar4Norm
+            typeof<C4b>, (VertexFormat.UChar4Norm, 1)
 
-            typeof<float32>, VertexFormat.Float
-            typeof<V2f>, VertexFormat.Float2
-            typeof<V3f>, VertexFormat.Float3
-            typeof<V4f>, VertexFormat.Float4
-            typeof<int>, VertexFormat.Int
-            typeof<V2i>, VertexFormat.Int2
-            typeof<V3i>, VertexFormat.Int3
-            typeof<V4i>, VertexFormat.Int4
+            typeof<float32>, (VertexFormat.Float, 1)
+            typeof<V2f>, (VertexFormat.Float2, 1)
+            typeof<V3f>, (VertexFormat.Float3, 1)
+            typeof<V4f>, (VertexFormat.Float4, 1)
+            typeof<int>, (VertexFormat.Int, 1)
+            typeof<V2i>, (VertexFormat.Int2, 1)
+            typeof<V3i>, (VertexFormat.Int3, 1)
+            typeof<V4i>, (VertexFormat.Int4, 1)
 
-            typeof<C4us>, VertexFormat.UShort4Norm
+            typeof<C4us>, (VertexFormat.UShort4Norm, 1)
 
-            typeof<uint32>, VertexFormat.UInt
-            typeof<C3ui>, VertexFormat.UInt2
-            typeof<C4ui>, VertexFormat.UInt3
+            typeof<uint32>, (VertexFormat.UInt, 1)
+            typeof<C3ui>, (VertexFormat.UInt2, 1)
+            typeof<C4ui>, (VertexFormat.UInt3, 1)
+
+
+            typeof<M44f>, (VertexFormat.Float4, 4)
         |]
         
     let ofType (t : Type) =
@@ -152,6 +155,7 @@ type Data() =
     abstract member CopyTo : dst : nativeint -> unit
     abstract member CopyTo<'a when 'a : unmanaged> : dst : Span<'a> -> unit
     abstract member Format : VertexFormat
+    abstract member SlotCount : int
 
     member x.ElementSize = VertexFormat.size x.Format
     member x.Count = x.Size / nativeint x.ElementSize |> int
@@ -168,41 +172,48 @@ type Data() =
         x.CopyTo(NativePtr.toNativeInt ptr)
 
     static member Create (array : 'a[]) =   
-        Data<'a>(VertexFormat.ofType typeof<'a>, Memory array) :> Data
+        let fmt, cnt = VertexFormat.ofType typeof<'a>
+        Data<'a>(fmt, cnt, Memory array) :> Data
         
-    static member Create (memory : Memory<'a>) =   
-        Data<'a>(VertexFormat.ofType typeof<'a>, memory) :> Data
+    static member Create (memory : Memory<'a>) = 
+        let fmt, cnt = VertexFormat.ofType typeof<'a>  
+        Data<'a>(fmt, cnt, memory) :> Data
 
     static member Create (array : 'a[], offset : int, count : int) =   
-        Data<'a>(VertexFormat.ofType typeof<'a>, Memory(array, offset, count)) :> Data
+        let fmt, cnt = VertexFormat.ofType typeof<'a>  
+        Data<'a>(fmt, cnt, Memory(array, offset, count)) :> Data
 
     static member Create (array : 'a[], offset : int) =   
-        Data<'a>(VertexFormat.ofType typeof<'a>, Memory(array, offset, array.Length - offset)) :> Data
+        let fmt, cnt = VertexFormat.ofType typeof<'a>  
+        Data<'a>(fmt, cnt, Memory(array, offset, array.Length - offset)) :> Data
         
-    static member Create (fmt : VertexFormat, array : 'a[]) =   
-        Data<'a>(fmt, Memory array) :> Data
+    static member Create (fmt : VertexFormat, cnt : int, array : 'a[]) =   
+        Data<'a>(fmt, cnt, Memory array) :> Data
         
-    static member Create (fmt : VertexFormat, memory : Memory<'a>) =   
-        Data<'a>(fmt, memory) :> Data
+    static member Create (fmt : VertexFormat, cnt : int, memory : Memory<'a>) =   
+        Data<'a>(fmt, cnt, memory) :> Data
 
-    static member Create (fmt : VertexFormat, array : 'a[], offset : int, count : int) =   
-        Data<'a>(fmt, Memory(array, offset, count)) :> Data
+    static member Create (fmt : VertexFormat, cnt : int, array : 'a[], offset : int, count : int) =   
+        Data<'a>(fmt, cnt, Memory(array, offset, count)) :> Data
 
-    static member Create (fmt : VertexFormat, array : 'a[], offset : int) =   
-        Data<'a>(fmt, Memory(array, offset, array.Length - offset)) :> Data
+    static member Create (fmt : VertexFormat, cnt : int, array : 'a[], offset : int) =   
+        Data<'a>(fmt, cnt, Memory(array, offset, array.Length - offset)) :> Data
         
-    static member Create (fmt : VertexFormat, ptr : nativeint, size : nativeint) =   
-        NativeData(fmt, ptr, size) :> Data
+    static member Create (fmt : VertexFormat, cnt : int, ptr : nativeint, size : nativeint) =   
+        NativeData(fmt, cnt, ptr, size) :> Data
 
-and private Data<'a when 'a : unmanaged>(fmt : VertexFormat, memory : Memory<'a>) =
+and private Data<'a when 'a : unmanaged>(fmt : VertexFormat, cnt : int, memory : Memory<'a>) =
     inherit Data()
     static let sa = nativeint sizeof<'a>
 
     //let fmt = VertexFormat.ofType typeof<'a>
-    let size = nativeint memory.Length * sa
+    let size = nativeint memory.Length * sa * nativeint cnt
 
     override x.Format =
         fmt
+
+    override x.SlotCount =
+        cnt
 
     override x.Size = 
         size
@@ -217,11 +228,14 @@ and private Data<'a when 'a : unmanaged>(fmt : VertexFormat, memory : Memory<'a>
         let src = Span<'x>(NativePtr.toVoidPtr (NativePtr.ofVoidPtr<'x> h.Pointer), cnt)
         src.CopyTo(dst)
 
-and private NativeData(fmt : VertexFormat, ptr : nativeint, size : nativeint) =
+and private NativeData(fmt : VertexFormat, cnt : int, ptr : nativeint, size : nativeint) =
     inherit Data()
 
     override x.Format =
         fmt
+        
+    override x.SlotCount =
+        cnt
 
     override x.Size = 
         size

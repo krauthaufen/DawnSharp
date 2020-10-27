@@ -387,6 +387,9 @@ type WebGPUExtensions private() =
 
         match result with
         | Some result ->
+            for i in (GLSLang.SpirV.Module.ofArray result).instructions do
+                printfn "%A" i
+
             device.CreateSpirVShaderModule { Label = descriptor.Label; Code = result } |> Ok
         | None ->
             Error log

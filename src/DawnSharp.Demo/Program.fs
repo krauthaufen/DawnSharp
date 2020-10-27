@@ -2310,7 +2310,7 @@ module SgTest =
             let mutable a = Data.Create [| V3f.OOO; V3f.IOO; V3f.OIO |]
             let mutable b = Data.Create [| V3f.OOO; -V3f.IOO; -V3f.OIO |]
 
-            let mutable quad = true
+            let mutable quad = false
 
             let cnt = cval 3
             let draw =
@@ -2327,20 +2327,13 @@ module SgTest =
                 )
             let mutable dirty = true
 
+            
             dev.SetUncapturedErrorCallback (ErrorCallback(fun typ str _ ->
                 Log.warn "%s" str
             ))
 
 
             
-
-            let runner = Reconciler()
-            let p = new RenderProgram(dev, false)
-            let r = ReconcilerNode<_>(runner, 0, SgTest.testSg C4b.Red draw quad [] a, TraversalState.empty updateState)
-            r.Fragment <- p.Root
-            runner.RunUntilEmpty()
-            
-
             let rand = RandomSystem()
             let ndc = Box2d(-V2d.II, V2d.II)
             let triSize = Box2d(-V2d.II * 0.05, V2d.II * 0.05)
@@ -2351,11 +2344,19 @@ module SgTest =
                 Triangle2d(p0, p1, p2)
                 
 
-
-
             let mutable all = List.init 50000 (fun _ -> newTriangle())
-            let mutable elemCount = 1
+            let mutable elemCount = 100
             let mutable elems = List.truncate elemCount all
+
+            let runner = Reconciler()
+            let p = new RenderProgram(dev, false)
+            let r = ReconcilerNode<_>(runner, 0, SgTest.testSg C4b.Red draw quad elems a, TraversalState.empty updateState)
+            r.Fragment <- p.Root
+            runner.RunUntilEmpty()
+            
+
+
+
             let rand = RandomSystem()
             glfw.SetKeyCallback(win, GlfwCallbacks.KeyCallback(fun _ k _ ac _ ->
                 match ac with
@@ -2369,6 +2370,9 @@ module SgTest =
                         elemCount <- max 0 (elemCount - 1)
                         Log.line "%d" elemCount
                         elems <- List.truncate elemCount all 
+                    | Keys.Space ->
+                        quad <- not quad
+                        Log.line "instanced: %A" quad
                     | _ ->
                         ()
                 | _ ->
@@ -2419,6 +2423,7 @@ module SgTest =
                 glfw.GetFramebufferSize(win, &s.X, &s.Y)
                 if false && s <> size then
                     size <- s
+                    //chain <- createSwapChain s
                     chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, s.X, s.Y)
 
                 use tex = chain.GetCurrentTextureView()
@@ -2470,7 +2475,7 @@ module SgTest =
 
                 chain.Present()
                 frames <- frames + 1
-                if frames > 100 then
+                if frames > 10 then
                     sw.Stop()
                     let dt = sw.Elapsed.TotalSeconds
                     if dt > 0.0 then
@@ -2528,9 +2533,9 @@ let main argv =
     let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
 
     let instance = Instance()
-    instance.EnableBackendValidation true
-    instance.EnableGPUBasedBackendValidation true
-    instance.EnableBeginCaptureOnStartup true
+    //instance.EnableBackendValidation true
+    //instance.EnableGPUBasedBackendValidation true
+    //instance.EnableBeginCaptureOnStartup true
 
     let adapters = instance.GetDefaultAdapters()
 
@@ -2578,7 +2583,7 @@ let main argv =
                         Usage = TextureUsage.OutputAttachment
                         Width = size.X
                         Height = size.Y
-                        PresentMode = PresentMode.Immediate
+                        PresentMode = PresentMode.Mailbox
                     }
                 )
 
@@ -2734,12 +2739,12 @@ let main argv =
         let render() =  
             let mutable s = V2i.II
             glfw.GetFramebufferSize(win, &s.X, &s.Y)
-            if false && s <> size then
+            if s <> size then
                 size <- s
-                //let newChain = createSwapChain s
-                //chain <- newChain
+                let newChain = createSwapChain s
+                chain <- newChain
                 
-                chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, s.X, s.Y)
+                //chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, s.X, s.Y)
 
             use tex = chain.GetCurrentTextureView()
 

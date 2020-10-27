@@ -104,13 +104,17 @@ type Component<'s, 'a> private(e : Environment, state : ValueOption<'a>) as this
         e.MarkDirty DirtyState.ForceUpdate
  
     abstract member ShouldUpdate : 'a * 'a -> bool
-    default x.ShouldUpdate(_,_) = true
-
-    member internal x.ShouldUpdateInternal(a : 'a, b : 'a) =
-        if ShallowEqualityComparer<'a>.ShallowEquals(a,b) then  
+    default x.ShouldUpdate(a, b) =
+        if ShallowEqualityComparer<'a>.ShallowEquals(a,b) then
             false
         else
-            x.ShouldUpdate(a, b)
+            true
+
+    member internal x.ShouldUpdateInternal(a : 'a, b : 'a) = x.ShouldUpdate(a,b)
+        //if ShallowEqualityComparer<'a>.ShallowEquals(a,b) then  
+        //    false
+        //else
+        //    x.ShouldUpdate(a, b)
 
 
     new(e : Environment) = Component<'s, 'a>(e, ValueNone)
@@ -256,7 +260,7 @@ type ReconcilerNode<'s>(env : Reconciler, level : int, node : Node<'s>, traversa
 
     override x.Run() =
         if dirty <> DirtyState.UpToDate then
-            let tryUpdate = mounted && dirty = DirtyState.Dirty
+            let tryUpdate = mounted //&& dirty = DirtyState.Dirty
             dirty <- DirtyState.UpToDate
 
             let mutable changed = true

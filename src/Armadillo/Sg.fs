@@ -82,6 +82,14 @@ module SgAttribute =
         member x.Data = value
         
     [<Struct>]
+    type VertexAttributes(values : HashMap<string, BufferDescriptor>) =
+        member x.Values = values
+        
+    [<Struct>]
+    type InstanceAttributes(values : HashMap<string, BufferDescriptor>) =
+        member x.Values = values
+
+    [<Struct>]
     type Uniform(name : string, value : IAdaptiveValue) =
         member x.Name = name
         member x.Value = value
@@ -119,9 +127,18 @@ type UpdateState =
     }
 
     member x.GetOrCreate(key : 'a, creator : 'a -> 'b) =
-        let key = struct(typeof<'b>, key)
+        let key = struct(typeof<'a>, typeof<'b>, key)
+
+        //try Unchecked.hash key |> ignore
+        //with _ -> Log.warn "%A" key
+
         x.caching.GetOrCreate(key :> obj, fun o -> 
-            let struct(_, v) = unbox<struct(Type * 'a)> o
+            let struct(_, _, v) = 
+                try unbox<struct(Type * Type * 'a)> o
+                with _ ->
+                    Log.warn "%A %A %A %A" o typeof<'a> typeof<'b> key
+                    reraise()
+
             creator v :> obj
         ) |> unbox<'b>
         
@@ -157,16 +174,23 @@ type ResourcePromise() =
 
     static let printer =
         startThread <| fun () ->
+            let mutable last = HashMap.empty
             while true do
                 Thread.Sleep 1000
 
-                Log.start "living"
-                for KeyValue(typ, cnt) in living do
-                    let c = !cnt
+                let all = 
+                    living 
+                    |> Seq.map (fun (KeyValue(typ, cnt)) -> typ, !cnt)
+                    |> Seq.filter (fun (_,b) -> b <> 0)
+                    |> HashMap.ofSeq
 
-                    if c <> 0 then
-                        Log.line "%s: %d" typ c
-                Log.stop()
+                if all <> last then
+                    last <- all
+                    Log.start "living"
+                    for (typ, c) in all do
+                        if c <> 0 then
+                            Log.line "%s: %d" typ c
+                    Log.stop()
         
     member x.HandleCreated() =
         Interlocked.Increment(&living.GetOrAdd(x.Name, fun _ -> ref 0).contents) |> ignore
@@ -253,7 +277,7 @@ type BufferPromise(state : UpdateState, usage : BufferUsage, data : BufferDescri
                 }
             buffer.Upload(data)
             struct (buffer, 0UL, uint64 data.Size)
-        | BufferDescriptor.Buffer(fmt, buf, off, size) ->
+        | BufferDescriptor.Buffer(fmt, cnt, buf, off, size) ->
             struct(buf.Clone(), uint64 off, uint64 size)
 
     override x.Destroy((buffer : Buffer, _, _)) =
@@ -262,6 +286,10 @@ type BufferPromise(state : UpdateState, usage : BufferUsage, data : BufferDescri
 
 type ShaderPromise(state : UpdateState, effects : list<FShade.Effect>) =
     inherit ResourcePromise<ShaderPromise, list<FShade.Effect>, struct(ShaderModule * ShaderModule)>(state, effects)
+
+    let effect =
+        effects
+        |> FShade.Effect.compose
 
     let glsl = 
         let cfg : FShade.EffectConfig =
@@ -272,12 +300,29 @@ type ShaderPromise(state : UpdateState, effects : list<FShade.Effect>) =
                 FShade.EffectConfig.outputs = state.outputs
             }
 
-        let backend = FShade.Backends.glslVulkan
-        effects
-        |> FShade.Effect.compose
+        let backend = 
+            FShade.GLSL.Backend.Create {
+                FShade.GLSL.Config.bindingMode = FShade.GLSL.BindingMode.Global
+                FShade.GLSL.Config.createDescriptorSets = true
+                FShade.GLSL.Config.createInputLocations = true
+                FShade.GLSL.Config.createOutputLocations = true
+                FShade.GLSL.Config.createPassingLocations = true
+                FShade.GLSL.Config.createPerStageUniforms = false
+                FShade.GLSL.Config.createUniformBuffers = true
+                FShade.GLSL.Config.depthWriteMode = true
+                FShade.GLSL.Config.reverseMatrixLogic = true
+                FShade.GLSL.Config.version = FShade.GLSL.GLSLVersion(4,5,0)
+                FShade.GLSL.Config.enabledExtensions = Set.empty
+                FShade.GLSL.Config.stepDescriptorSets = true
+                FShade.GLSL.Config.useInOut = true
+
+            }
+        effect
         |> FShade.Effect.toModule cfg
         |> FShade.Imperative.ModuleCompiler.compile backend
         |> FShade.GLSL.Assembler.assemble backend
+
+    do Aardvark.Base.Log.line "%s" glsl.code
 
     let bindGroups =
         let mutable groups : MapExt<int, MapExt<int, BindingInfo>> = MapExt.empty
@@ -392,6 +437,8 @@ type ShaderPromise(state : UpdateState, effects : list<FShade.Effect>) =
                 [||]
         )
 
+    member x.Effect = effect
+
     member x.BindGroups = bindGroups
 
     member x.Interface = glsl.iface
@@ -457,8 +504,8 @@ type PipelineLayoutPromise(state : UpdateState, groups : list<BindGroupLayoutPro
         groups |> List.iter (fun g -> g.Release())
         p.Dispose()
 
-type PipelinePromise(state : UpdateState, top : PrimitiveTopology, layout : PipelineLayoutPromise, shader : ShaderPromise, vertexBuffers : HashMap<string, VertexFormat>, instanceBuffers : HashMap<string, VertexFormat>) =
-    inherit ResourcePromise<PipelinePromise, struct(PrimitiveTopology * PipelineLayoutPromise * ShaderPromise * HashMap<string, VertexFormat> * HashMap<string, VertexFormat>), RenderPipeline>(
+type PipelinePromise(state : UpdateState, top : PrimitiveTopology, layout : PipelineLayoutPromise, shader : ShaderPromise, vertexBuffers : HashMap<string, VertexFormat * int>, instanceBuffers : HashMap<string, VertexFormat * int>) =
+    inherit ResourcePromise<PipelinePromise, struct(PrimitiveTopology * PipelineLayoutPromise * ShaderPromise * HashMap<string, VertexFormat * int> * HashMap<string, VertexFormat * int>), RenderPipeline>(
         state,
         struct(top, layout, shader, vertexBuffers, instanceBuffers)
     )
@@ -468,7 +515,7 @@ type PipelinePromise(state : UpdateState, top : PrimitiveTopology, layout : Pipe
     member x.WithPrimitiveTopology(newTop : PrimitiveTopology) =
         x.Update(struct(newTop, layout, shader, vertexBuffers, instanceBuffers))
 
-    override x.Recreate(struct(newTop : PrimitiveTopology, newLayout : PipelineLayoutPromise, newShader : ShaderPromise, newVertexBuffers : HashMap<string, VertexFormat>, newInstanceBuffers : HashMap<string, VertexFormat>)) =
+    override x.Recreate(struct(newTop : PrimitiveTopology, newLayout : PipelineLayoutPromise, newShader : ShaderPromise, newVertexBuffers : HashMap<string, VertexFormat * int>, newInstanceBuffers : HashMap<string, VertexFormat * int>)) =
         new PipelinePromise(state, newTop, newLayout, newShader, newVertexBuffers, newInstanceBuffers)
 
     override x.Create() =
@@ -479,37 +526,39 @@ type PipelinePromise(state : UpdateState, top : PrimitiveTopology, layout : Pipe
         let vbs = 
             shader.Interface.inputs |> List.toArray |> Array.map (fun par ->
                 match HashMap.tryFind par.paramSemantic vertexBuffers with
-                | Some format ->
+                | Some (format, cnt) ->
+                    let elemSize = VertexFormat.size format
                     {
-                        ArrayStride = uint64 (VertexFormat.size format)
+                        ArrayStride = uint64 elemSize * uint64 cnt
                         StepMode = InputStepMode.Vertex
                         Attributes =
-                            [|
+                            Array.init cnt (fun i ->
                                 // TODO: non-primitive type (M44f, etc.)
                                 { 
                                     Format = format
-                                    Offset = 0UL
-                                    ShaderLocation = par.paramLocation 
+                                    Offset = uint64 elemSize * uint64 i
+                                    ShaderLocation = par.paramLocation + i
                                 }
-                            |]
+                            )
                     }
 
                 | None ->
                     match HashMap.tryFind par.paramSemantic instanceBuffers with
-                    | Some format ->
+                    | Some (format, cnt) ->
+                        let elemSize = VertexFormat.size format
 
                         {
-                            ArrayStride = uint64 (VertexFormat.size format)
+                            ArrayStride = uint64 elemSize * uint64 cnt
                             StepMode = InputStepMode.Instance
                             Attributes =
-                                [|
+                                Array.init cnt (fun i ->
                                     // TODO: non-primitive type (M44f, etc.)
                                     { 
                                         Format = format
-                                        Offset = 0UL
-                                        ShaderLocation = par.paramLocation 
+                                        Offset = uint64 elemSize * uint64 i
+                                        ShaderLocation = par.paramLocation  + i
                                     }
-                                |]
+                                )
                         }
                     | None ->
                         // TODO how to not bind attributes
@@ -517,13 +566,13 @@ type PipelinePromise(state : UpdateState, top : PrimitiveTopology, layout : Pipe
                             ArrayStride = 0UL
                             StepMode = InputStepMode.Instance
                             Attributes = 
-                                [|
+                                Array.init 1 (fun i ->
                                     { 
                                         Format = VertexFormat.Float4
                                         Offset = 0UL
-                                        ShaderLocation = par.paramLocation 
+                                        ShaderLocation = par.paramLocation + i
                                     }
-                                |]
+                                )
                         }
             )
 
@@ -937,6 +986,7 @@ type TraversalState =
         bindGroupLayouts    : list<BindGroupLayoutPromise>
         pipelineLayout      : option<PipelineLayoutPromise>
         vertexBuffers       : HashMap<string, BufferPromise>
+        instanceBuffers     : HashMap<string, BufferPromise>
         pipeline            : option<PipelinePromise>
         uniformValues       : HashMap<string, IAdaptiveValue>
         bindGroups          : HashMap<int, BindGroupPromise>
@@ -956,6 +1006,8 @@ type TraversalState =
             (x.bindGroupLayouts == o.bindGroupLayouts || x.bindGroupLayouts = o.bindGroupLayouts) &&
             (x.pipelineLayout = o.pipelineLayout) &&
             (ShallowEqualityComparer.ShallowEquals(x.vertexBuffers, o.vertexBuffers) || x.vertexBuffers = o.vertexBuffers) &&
+            (ShallowEqualityComparer.ShallowEquals(x.instanceBuffers, o.instanceBuffers) || x.instanceBuffers = o.instanceBuffers) &&
+
             x.pipeline = o.pipeline &&
             (ShallowEqualityComparer.ShallowEquals(x.uniformValues, o.uniformValues) || x.uniformValues = o.uniformValues) &&
             (ShallowEqualityComparer.ShallowEquals(x.bindGroups, o.bindGroups) || x.bindGroups = o.bindGroups)
@@ -975,6 +1027,7 @@ module TraversalState =
             bindGroupLayouts = []
             pipelineLayout = None
             vertexBuffers = HashMap.empty
+            instanceBuffers = HashMap.empty
             pipeline = None
             uniformValues = HashMap.empty
             bindGroups = HashMap.empty
@@ -1012,6 +1065,7 @@ module Sg =
         let mutable bindGroupLayoutPromises : BindGroupLayoutPromise[] = [||]
         let mutable pipelineLayoutPromise : option<PipelineLayoutPromise> = None
         let mutable vertexAttributes : HashMap<string, BufferPromise> = HashMap.empty
+        let mutable instanceAttributes : HashMap<string, BufferPromise> = HashMap.empty
         let mutable pipelinePromise : option<PipelinePromise> = None
         let mutable bindGroupPromises : HashMap<int, BindGroupPromise> = HashMap.empty
 
@@ -1144,6 +1198,32 @@ module Sg =
                         )
                     { state with vertexBuffers = HashMap.union state.vertexBuffers vertexAttributes }
 
+            // instanceBuffers
+            let state =
+                if HashMap.isEmpty atts.instanceAttributes then
+                    instanceAttributes <- HashMap.empty
+                    state
+                else
+                    let usage = BufferUsage.CopyDst ||| BufferUsage.Vertex
+                    instanceAttributes <-
+                        (atts.instanceAttributes, instanceAttributes) ||> HashMap.choose2V (fun k att prom ->
+                            match att with
+                            | ValueSome att ->
+                                match prom with
+                                | ValueSome prom ->
+                                    prom.Update(struct (usage, att)) |> ValueSome
+                                | ValueNone ->
+                                    state.update.GetOrCreate(usage, att, fun usage att ->
+                                        new BufferPromise(state.update, usage, att) 
+                                    ) |> ValueSome
+                            | ValueNone ->
+                                match prom with
+                                | ValueSome _ -> ()
+                                | ValueNone -> ()
+                                ValueNone
+                        )
+                    { state with instanceBuffers = HashMap.union state.instanceBuffers instanceAttributes }
+
             // pipeline
             let state = 
                 let pipelineChanged = Option.isSome atts.shader // TODO: BlendMode/etc.
@@ -1151,14 +1231,16 @@ module Sg =
                 | Some shader, Some layout when pipelineChanged ->
                     match pipelinePromise with
                     | Some prom ->
-                        let formats = state.vertexBuffers |> HashMap.map (fun _ b -> b.Data.Format)
-                        let res = prom.Update(PrimitiveTopology.TriangleList, layout, shader, formats, HashMap.empty)
+                        let formats = state.vertexBuffers |> HashMap.map (fun _ b -> b.Data.Format, b.Data.SlotCount)
+                        let instanceFormats = state.instanceBuffers |> HashMap.map (fun _ b -> b.Data.Format, b.Data.SlotCount)
+                        let res = prom.Update(PrimitiveTopology.TriangleList, layout, shader, formats, instanceFormats)
                         pipelinePromise <- Some res
                         { state with pipeline = Some res }
                     | None ->
-                        let formats = state.vertexBuffers |> HashMap.map (fun _ b -> b.Data.Format)
+                        let formats = state.vertexBuffers |> HashMap.map (fun _ b -> b.Data.Format, b.Data.SlotCount)
+                        let instanceFormats = state.instanceBuffers |> HashMap.map (fun _ b -> b.Data.Format, b.Data.SlotCount)
                         let pipe = 
-                            state.update.GetOrCreate(PrimitiveTopology.TriangleList, layout, shader, formats, HashMap.empty, fun top layout shader a b ->
+                            state.update.GetOrCreate(PrimitiveTopology.TriangleList, layout, shader, formats, instanceFormats, fun top layout shader a b ->
                                 new PipelinePromise(state.update, top, layout, shader, a, b)
                             )
                         pipelinePromise <- Some pipe
@@ -1219,8 +1301,8 @@ module Sg =
 
         let mutable destroy = System.Collections.Generic.List<IDisposable>()
 
-        override x.ShouldUpdate(o, n) =
-            true
+        //override x.ShouldUpdate(o, n) =
+        //    true
 
         override x.Update(prog : RenderFragment, state : TraversalState) =
             //printfn "update draw %A" x.State
@@ -1236,14 +1318,25 @@ module Sg =
 
 
                 let buffers =
-                    p.Interface.inputs |> List.toArray |> Array.choose (fun p ->
+                    p.Interface.inputs |> List.toArray |> Array.collect (fun p ->
                         match HashMap.tryFind p.paramSemantic state.vertexBuffers with
                         | Some vb -> 
                             destroy.Add vb
                             let struct (b,o,s) = vb.Acquire()
-                            Some (p.paramLocation, b, o, s)
+                            Array.init vb.Data.SlotCount (fun i ->
+                                (p.paramLocation + i, b, o, s)
+                            )
+
                         | None -> 
-                            None
+                            match HashMap.tryFind p.paramSemantic state.instanceBuffers with
+                            | Some vb -> 
+                                destroy.Add vb
+                                let struct (b,o,s) = vb.Acquire()
+                                Array.init vb.Data.SlotCount (fun i ->
+                                    (p.paramLocation + i, b, o, s)
+                                )
+                            | None -> 
+                                [||]
                     )
 
                 let groups = 
@@ -1268,6 +1361,7 @@ module Sg =
                         s.SetBindGroup(idx, binding, null)
 
                     for (slot, buffer, offset, size) in buffers do
+                        
                         s.SetVertexBuffer(slot, buffer, offset, size)
 
                     s.Draw info
@@ -1380,6 +1474,10 @@ module Sg =
 
         static member Constructor = ctor
 
+        //override x.ShouldUpdate(o, n) =
+        //    Log.line "%A %A" o n
+        //    true
+
         override x.ReceivedValue() =    
             let (value, creator) = x.State
             transact (fun () ->
@@ -1388,7 +1486,7 @@ module Sg =
             )
 
         override x.Mount() =
-            let (_value, creator) = x.State
+            let (value, creator) = x.State
 
             let list =
                 { new alist<'a> with
@@ -1397,6 +1495,9 @@ module Sg =
                     member x.IsConstant = false
                     member x.GetReader() = myValue.NewReader()
                 }
+                
+            let ops = IndexList.computeDeltaToList myValue.State value
+            myValue.Perform ops |> ignore
 
             let list = creator.Value list
             reader <- list.GetReader()
@@ -1473,6 +1574,10 @@ module Sg =
     let inline trafo (t : Trafo3d) = SgAttribute.Trafo t
     let inline vertexAttribute (name : string) (value : BufferDescriptor) = SgAttribute.VertexAttribute(name, value)
     let inline instanceAttribute (name : string) (value : BufferDescriptor) = SgAttribute.InstanceAttribute(name, value)
+
+    let inline vertexAttributes (values : #seq<string * BufferDescriptor>) = SgAttribute.VertexAttributes(HashMap.ofSeq values)
+    let inline instanceAttributes (values : #seq<string * BufferDescriptor>) = SgAttribute.InstanceAttributes(HashMap.ofSeq values)
+
     let inline vertexData (name : string) (value : Data) = SgAttribute.VertexAttribute(name, BufferDescriptor.Data value)
     let inline instanceData (name : string) (value : Data) = SgAttribute.InstanceAttribute(name, BufferDescriptor.Data value)
     let inline uniform (name : string) (value : 'a) = SgAttribute.Uniform(name, AVal.constant value :> IAdaptiveValue)
@@ -1524,6 +1629,12 @@ module Sg =
         member x.Emit(att : SgAttribute.InstanceAttribute) =
             attributes.instanceAttributes <- HashMap.add att.Name att.Data attributes.instanceAttributes
             
+        member x.Emit(att : SgAttribute.VertexAttributes) =
+            attributes.vertexAttributes <- HashMap.union attributes.vertexAttributes att.Values
+            
+        member x.Emit(att : SgAttribute.InstanceAttributes) =
+            attributes.instanceAttributes <- HashMap.union attributes.instanceAttributes att.Values
+            
         member x.Emit(att : SgAttribute.Uniform) =
             attributes.uniforms <- HashMap.add att.Name att.Value attributes.uniforms
 
@@ -1554,6 +1665,12 @@ module Sg =
         member inline x.Yield(s : SgAttribute.InstanceAttribute) =
             GroupBuilder.GroupBuilder.Emit s
             
+        member inline x.Yield(s : SgAttribute.VertexAttributes) =
+            GroupBuilder.GroupBuilder.Emit s
+
+        member inline x.Yield(s : SgAttribute.InstanceAttributes) =
+            GroupBuilder.GroupBuilder.Emit s
+
         member inline x.Yield(s : SgAttribute.Uniform) =
             GroupBuilder.GroupBuilder.Emit s
             
@@ -1587,50 +1704,67 @@ module Sg =
             finally 
                 GroupBuilder.GroupBuilder <- o
 
-    type GroupBuilderAlt() =
-        
-        //[<ThreadStatic; DefaultValue>]
-        //static val mutable private _GroupBuilder : GroupBuilderInternal
-        
-        //static member GroupBuilder
-        //    with get() = GroupBuilder._GroupBuilder
-        //    and set v = GroupBuilder._GroupBuilder <- v
-            
-        member inline x.Yield(sg : Sg) =
-            fun (b : GroupBuilderInternal) -> b.Emit sg
-
-        member inline x.Yield(s : SgAttribute.Shader) =
-            fun (b : GroupBuilderInternal) -> b.Emit s
-            
-        member inline x.Yield(s : SgAttribute.VertexAttribute) =
-            fun (b : GroupBuilderInternal) -> b.Emit s
-
-        member inline x.Yield(s : SgAttribute.InstanceAttribute) =
-            fun (b : GroupBuilderInternal) -> b.Emit s
-            
-        member inline x.Delay(action : unit -> GroupBuilderInternal -> unit) =
-            action()
-
-        member inline x.Zero() =
-            fun (_b : GroupBuilderInternal) -> ()
-
-        member inline x.Combine(l : GroupBuilderInternal -> unit, r : GroupBuilderInternal -> unit) =
-            fun b ->
-                l b
-                r b
-
-        member inline x.Run(action : GroupBuilderInternal -> unit) =
-            let b = GroupBuilderInternal()
-            action b
-            b.ToSg()
-
-
     let bgroup = GroupBuilder()
-
-
 
     let adraw = 
         Node.create AdaptiveDrawComponent
+        
+    type InstancedComponent<'a>(e : Environment, tup) =
+        inherit Component<TraversalState, struct(DrawInfo * list<'a> * Set<string> * Eq<list<'a> -> HashMap<string, Data>>)>(e, tup)
+
+        let mutable effectCache = None
+        let mutable bufferCache = None
+
+        override x.Update(p, s) =
+            let struct (info, values, types, getter) = x.State
+            match s.shader with
+            | Some shader ->    
+                let instancedEffect =
+                    match effectCache with
+                    | Some (a, b) when Unchecked.equals a shader -> b
+                    | _ ->
+                        let instancedEffect =
+                            shader.Effect |>
+                            FShade.Effect.uniformsToInputs types
+                        effectCache <- Some (shader, instancedEffect)
+                        instancedEffect
+
+                let atts, drawInfo =
+                    match bufferCache with
+                    | Some (a, b, c) when Unchecked.equals a values -> b, c
+                    | _ ->
+                        let atts = getter.Value values
+                        let cnt = atts |> HashMap.toSeq |> Seq.map (fun (_,d) -> d.Count) |> Seq.min
+
+                        let res = atts |> HashMap.map (fun _ d -> BufferDescriptor.Data d)
+                        let info = { info with instanceCount = cnt }
+                        bufferCache <- Some (values, res, info)
+                        res, info
+
+                //let a = SgAttributes.empty()
+                //a.instanceAttributes <- atts
+                //a.shader <- Some instancedEffect
+                s, [
+                    bgroup {
+                        instanceAttributes atts
+                        effect [ instancedEffect ]
+                        draw drawInfo
+                    }
+                ]
+                //s, [ group a [ draw drawInfo ] ]
+            | None ->
+                s, []
+            
+    type private InstancedHelpers<'a> private() =
+        static let creator = Node.create InstancedComponent<'a>
+        static member Create(info : DrawInfo, uniforms : Set<string>, values : list<'a>, getter : list<'a> -> HashMap<string, Data>) =
+            creator struct(info, values, uniforms, Eq getter)
+
+
+    let instanced (info : DrawInfo) (uniforms : Set<string>) (values : list<'a>) (getter : list<'a> -> HashMap<string, Data>) =
+        InstancedHelpers<'a>.Create(info, uniforms, values, getter)
+
+            
 
 module SgTest = 
 
@@ -1639,6 +1773,18 @@ module SgTest =
         type Vertex = 
             {
                 [<Position>] pos : V4d
+            }
+
+        let trafo (v : Vertex) =
+            vertex {
+                let m1 : V4d = uniform?trafo1
+                let m2 : V4d = uniform?trafo2
+                let m3 : V4d = uniform?trafo3
+                let m4 : V4d = uniform?trafo4
+
+                let m = M44d.FromRows(m1, m2, m3, m4)
+
+                return { v with pos = m * v.pos }
             }
 
         let bla (v : Vertex) =
@@ -1668,8 +1814,21 @@ module SgTest =
         |]
 
 
-    let blaEff = FShade.Effect.ofFunction Shader.bla
-    let blubEff = FShade.Effect.ofFunction Shader.blubb
+    let blaEff = 
+        FShade.Effect.compose [
+            FShade.Effect.ofFunction Shader.trafo
+            FShade.Effect.ofFunction Shader.bla
+        ]
+    let blubEff = 
+        FShade.Effect.compose [
+            FShade.Effect.ofFunction Shader.trafo
+            FShade.Effect.ofFunction Shader.blubb
+        ]
+
+
+    let triData = Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |]
+
+
 
     let testSg (color : C4b) (cnt : aval<DrawInfo>) (showQuad : bool) (triangles : list<Triangle2d>) (pos : Data) =
         Sg.bgroup {
@@ -1678,50 +1837,79 @@ module SgTest =
             Sg.effect [blaEff]
             Sg.vertexData "Positions" pos
 
-
-            //if showQuad then
-            //    Sg.bgroup {
-            //        Sg.uniform "a" C4b.Lime
-            //        Sg.vertexData "Positions" quad
-            //        Sg.draw {
-            //            indexed = false
-            //            mode = PrimitiveTopology.TriangleList
-            //            instanceCount = 1
-            //            count = 6
-            //            first = 0
-            //            firstInstance = 0
-            //            baseVertex = 0
-            //        }
-            //    }
-
-            //Sg.adraw (
-            //    cnt
-            //)
-          
             Sg.bgroup { 
-                //Sg.shader {
-                //    do! Shader.blubb
-                //}
+                //Sg.vertexData "Positions" (Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
                 Sg.effect [blubEff]
+                //Sg.vertexData "Positions" (Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
+                Sg.vertexData "Positions" triData //(Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
 
-                for tri in triangles do
-                    Sg.bgroup {
-                        if tri.P0.X > 0.9 then Sg.effect [blaEff]
-                        //else Sg.effect [blubEff]
-                        
-                        Sg.uniform "a" C4b.Green
-                        Sg.vertexData "Positions" (Data.Create [| V3f(tri.P0, 0.0); V3f(tri.P1, 0.0); V3f(tri.P2, 0.0) |])
 
-                        Sg.draw {
-                            indexed = false
-                            mode = PrimitiveTopology.TriangleList
-                            instanceCount = 1
-                            count = 3
-                            first = 0
-                            firstInstance = 0
-                            baseVertex = 0
-                        }
+                let info =
+                    {
+                        indexed = false
+                        mode = PrimitiveTopology.TriangleList
+                        instanceCount = 1
+                        count = 3
+                        first = 0
+                        firstInstance = 0
+                        baseVertex = 0
                     }
+
+                if showQuad then
+                    Sg.instanced info (Set.ofList ["trafo1"; "trafo2"; "trafo3"; "trafo4"]) triangles (fun triangles ->
+                        let arr = triangles |> List.toArray
+
+                        let trafos =
+                            arr |> Array.map (fun tri ->
+                                let u = V3d(tri.Edge01, 0.0)
+                                let v = V3d(tri.Edge02, 0.0)
+                                let n = Vec.cross u v
+
+                                M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0))
+                                |> M44f.op_Explicit
+                            )
+
+                        let t1 = trafos |> Array.map (fun m -> m.R0)
+                        let t2 = trafos |> Array.map (fun m -> m.R1)
+                        let t3 = trafos |> Array.map (fun m -> m.R2)
+                        let t4 = trafos |> Array.map (fun m -> m.R3)
+
+                        HashMap.ofList [
+                            "trafo1", Data.Create t1
+                            "trafo2", Data.Create t2
+                            "trafo3", Data.Create t3
+                            "trafo4", Data.Create t4
+                        ]
+                    )
+
+                else
+                    for tri in triangles do
+                        Sg.bgroup {
+
+                            //if tri.P0.X > 0.9 then Sg.effect [blaEff]
+                            //else Sg.effect [blubEff]
+                        
+                            let u = V3d(tri.Edge01, 0.0)
+                            let v = V3d(tri.Edge02, 0.0)
+                            let n = Vec.cross u v
+
+                            let m = M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0))
+                            Sg.uniform "trafo1" m.R0
+                            Sg.uniform "trafo2" m.R1
+                            Sg.uniform "trafo3" m.R2
+                            Sg.uniform "trafo4" m.R3
+                            //Sg.uniform "trafo" (M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0)))
+
+                            Sg.draw {
+                                indexed = false
+                                mode = PrimitiveTopology.TriangleList
+                                instanceCount = 1
+                                count = 3
+                                first = 0
+                                firstInstance = 0
+                                baseVertex = 0
+                            }
+                        }
             }
             //Sg.memo elems (fun cnt ->   
             //    let rand = RandomSystem()
