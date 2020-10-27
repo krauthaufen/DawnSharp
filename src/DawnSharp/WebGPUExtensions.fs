@@ -358,7 +358,7 @@ type WebGPUExtensions private() =
     static member CreateSpirVShaderModule(device : Device, descriptor : SpirVShaderModuleDescriptor) =
         if descriptor.Code.Length &&& 3 <> 0 then failwith "Bad SpirV"
         let desc = { ShaderModuleDescriptor.Label = descriptor.Label }
-        desc.Pin(fun native ->
+        desc.Pin(device, fun native ->
             let mutable native = native
 
             let gc = GCHandle.Alloc(descriptor.Code, GCHandleType.Pinned)

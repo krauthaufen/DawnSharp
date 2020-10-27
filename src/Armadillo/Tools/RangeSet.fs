@@ -118,6 +118,11 @@ module private RangeSetHelpers =
         let mutable stack = ValueNone
 
         member x.MoveNext() =
+
+            let inline skip (l : KeyValuePair<int, HalfRangeKind>) (r : KeyValuePair<int, HalfRangeKind>) =
+                (l.Value = HalfRangeKind.Right && r.Value = HalfRangeKind.Left) ||
+                (l.Value = HalfRangeKind.Left && r.Value = HalfRangeKind.Right)
+
             match stack with
             | ValueSome s ->
                 if stackSide = 0 then
@@ -129,9 +134,17 @@ module private RangeSetHelpers =
                             stack <- ValueSome b.Current
                             stackSide <- 1
                             true
-                        else
+
+                        elif c > 0 then 
                             current <- b.Current
                             true
+                        else
+                            if skip s b.Current then
+                                stack <- ValueNone
+                                x.MoveNext()
+                            else
+                                current <- b.Current
+                                true
                     else
                         current <- s
                         stack <- ValueNone
@@ -145,9 +158,16 @@ module private RangeSetHelpers =
                             stack <- ValueSome a.Current
                             stackSide <- 0
                             true
-                        else
+                        elif c > 0 then
                             current <- a.Current
                             true
+                        else
+                            if skip s a.Current then
+                                stack <- ValueNone
+                                x.MoveNext()
+                            else
+                                current <- a.Current
+                                true
                     else
                         current <- s
                         stack <- ValueNone
@@ -161,11 +181,20 @@ module private RangeSetHelpers =
                             stack <- ValueSome b.Current
                             stackSide <- 1
                             true
-                        else
+                        elif c > 0 then
                             current <- b.Current
                             stack <- ValueSome a.Current
                             stackSide <- 0
                             true
+                        else
+                            if skip a.Current b.Current then
+                                x.MoveNext()
+                            else
+                                current <- a.Current
+                                stack <- ValueSome b.Current
+                                stackSide <- 0
+                                true
+                                
                     
                     else
                         current <- a.Current
@@ -205,6 +234,7 @@ module private RangeSetHelpers =
                 
 
 
+/// RangeSet represents a non-overlapping set of int-ranges.
 [<StructuredFormatDisplay("{AsString}"); Struct; CustomEquality; CustomComparison>]
 type RangeSet private(store : MapExt<int, HalfRangeKind>) =
     static let empty = RangeSet(MapExt.empty)
@@ -386,7 +416,6 @@ type RangeSet private(store : MapExt<int, HalfRangeKind>) =
             let mutable r = r
             for range in l do
                 r <- r.Add range
-
             r
         else
             let mutable l = l
@@ -395,10 +424,7 @@ type RangeSet private(store : MapExt<int, HalfRangeKind>) =
             l
 
     static member Difference(l : RangeSet, r : RangeSet) : RangeSet =
-        if l.Count = 0 then 
-            l
-
-        elif r.Count = 0 then
+        if l.Count = 0 || r.Count = 0 then 
             l
 
         else
@@ -433,9 +459,38 @@ type RangeSet private(store : MapExt<int, HalfRangeKind>) =
                         |> MapExt.add start HalfRangeKind.Left
                         |> MapExt.add k HalfRangeKind.Right
 
-        if result.Count % 2 = 1 then printfn "asdasdasd"
         RangeSet(result)
 
+    static member Xor(l : RangeSet, r : RangeSet) =
+        use e = new SortedBinaryEnumerator((l.Store :> seq<_>).GetEnumerator(), (r.Store :> seq<_>).GetEnumerator())
+
+        let mutable result = MapExt.empty
+        let mutable cnt = 0
+        let mutable start = ValueNone
+        while e.MoveNext() do   
+            let kvp = e.Current
+            let k = kvp.Key
+            let op = kvp.Value
+            let oldCnt = cnt
+            match op with
+            | HalfRangeKind.Left -> cnt <- cnt + 1
+            | HalfRangeKind.Right -> cnt <- cnt - 1
+
+            if cnt = 1 then
+                start <- ValueSome k
+            elif oldCnt = 1 then
+                match start with
+                | ValueSome start when start < k ->
+                    result <-
+                        result
+                        |> MapExt.add start HalfRangeKind.Left
+                        |> MapExt.add k HalfRangeKind.Right
+                | _ ->
+                    ()
+                start <- ValueNone
+
+        RangeSet(result)
+        
 
     member x.Count = 
         assert (store.Count &&& 1 = 0)
@@ -561,20 +616,43 @@ type RangeSet private(store : MapExt<int, HalfRangeKind>) =
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module RangeSet =
+    /// The empty RangeSet.
     let empty = RangeSet.Empty
 
-    let inline ofSeq (s : seq<Range1i>) = RangeSet.OfSeq s
-    let inline ofList (s : list<Range1i>) = RangeSet.OfSeq s
-    let inline ofArray (s : Range1i[]) = RangeSet.OfSeq s
+    /// Creates a RangeSet from the given (possibly overlapping) ranges.
+    let inline ofSeq (ranges : seq<Range1i>) = RangeSet.OfSeq ranges
 
+    /// Creates a RangeSet from the given (possibly overlapping) ranges.
+    let inline ofList (ranges : list<Range1i>) = RangeSet.OfSeq ranges
+    
+    /// Creates a RangeSet from the given (possibly overlapping) ranges.
+    let inline ofArray (ranges : Range1i[]) = RangeSet.OfSeq ranges
+
+    /// Adds the given range to the RangeSet.
     let inline add (r : Range1i) (s : RangeSet) = s.Add r
+    
+    /// Removes the given range from the RangeSet.
     let inline remove (r : Range1i) (s : RangeSet) = s.Remove r
+
+    /// Checks whether the RangeSet contains the given value.
     let inline contains (v : int) (s : RangeSet) = s.Contains v
+
+    /// Checks whether the RangeSet contains the given range.
     let inline containsRange (v : Range1i) (s : RangeSet) = s.Contains v
+
+    /// Returns the number of ranges in the RangeSet.
     let inline count (s : RangeSet) = s.Count
 
-    let inline tryDequeue (s : RangeSet) = s.TryDequeue()
-    let inline union (l : RangeSet) (r : RangeSet) = RangeSet.Union(l,r)
+    /// Tries to "dequeue" the first value from the RangeSet, returns
+    /// the (optional) value and the remaining RangeSet.
+    let inline tryDequeue (s : RangeSet) = 
+        s.TryDequeue()
+
+    /// Unions two RangeSets.
+    let inline union (l : RangeSet) (r : RangeSet) = 
+        RangeSet.Union(l,r)
+        
+    /// Unions many RangeSets.
     let unionMany (l : #seq<RangeSet>) =
         use e = l.GetEnumerator()
         if e.MoveNext() then
@@ -585,7 +663,16 @@ module RangeSet =
         else
             empty
     
-    let inline intersect (l : RangeSet) (r : RangeSet) = RangeSet.Intersection(l,r)
+    /// Intersects two RangeSets.
+    let inline intersect (l : RangeSet) (r : RangeSet) = 
+        RangeSet.Intersection(l,r)
+        
+    
+    /// Xors two RangeSets.
+    let inline xor (l : RangeSet) (r : RangeSet) = 
+        RangeSet.Xor(l,r)
+
+    /// Intersects many RangeSets.
     let intersectMany (l : seq<RangeSet>) = 
         use e = l.GetEnumerator()
         if e.MoveNext() then
@@ -595,12 +682,18 @@ module RangeSet =
             set
         else
             empty
+            
+    /// Removes all Ranges in r from l.
+    let inline difference (l : RangeSet) (r : RangeSet) = 
+        RangeSet.Difference(l,r)
 
-    let inline difference (l : RangeSet) (r : RangeSet) = RangeSet.Difference(l,r)
-
-
+    /// Returns a sequence of all ranges in the RangeSet.
     let inline toSeq (s : RangeSet) = s :> seq<_>
+    
+    /// Returns a list of all ranges in the RangeSet.
     let inline toList (s : RangeSet) = s.ToList()
+    
+    /// Returns an array of all ranges in the RangeSet.
     let inline toArray (s : RangeSet) = s.ToArray()
 
     let inline toValueSeq (s : RangeSet) = s.ToValueSeq()

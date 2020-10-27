@@ -26,6 +26,13 @@ type SimpleRangeSet(values : Set<int>) =
         
     static member Intersection(l : SimpleRangeSet, r : SimpleRangeSet) =
         SimpleRangeSet(Set.intersect l.Values r.Values)
+        
+    static member Xor(l : SimpleRangeSet, r : SimpleRangeSet) =
+        SimpleRangeSet(
+            Set.difference 
+                (Set.union l.Values r.Values)
+                (Set.intersect l.Values r.Values)
+        )
 
     member x.Values = values
 
@@ -137,6 +144,8 @@ type SimpleRangeSet(values : Set<int>) =
 let RangeSet =
     testList "RangeSet" [
         property "ofSeq" <| fun (a : list<Range1i>) ->
+            
+
             let set = RangeSet.ofSeq a
             let simple = SimpleRangeSet a
 
@@ -198,7 +207,18 @@ let RangeSet =
             let t = SimpleRangeSet.Intersection(ta, tb)
 
             t.Check s
+            
+        property "xor" <| fun (a : list<Range1i>) (b : list<Range1i>)  ->
+            let sa = RangeSet.ofSeq a
+            let ta = SimpleRangeSet a
+            let sb = RangeSet.ofSeq b
+            let tb = SimpleRangeSet b
 
+
+            let s = RangeSet.xor sa sb
+            let t = SimpleRangeSet.Xor(ta, tb)
+
+            t.Check s
 
 
 

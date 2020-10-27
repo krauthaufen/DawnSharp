@@ -2223,7 +2223,7 @@ module SgTest =
 
         let adapters = instance.GetDefaultAdapters()
 
-        let idx = 1
+        let idx = 0
 
         //for (idx, a) in Array.indexed adapters do
         //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
@@ -2434,7 +2434,7 @@ module SgTest =
                                     ResolveTarget = null
                                     LoadOp = LoadOp.Clear
                                     StoreOp = StoreOp.Store
-                                    ClearColor = { R = 0.5f; G = 0.5f; B = 0.5f; A = 1.0f }
+                                    ClearColor = { R = 0.5; G = 0.5; B = 0.5; A = 1.0 }
                                 }
                             |]
                         DepthStencilAttachment =
@@ -2756,7 +2756,7 @@ let main argv =
                                 ResolveTarget = null
                                 LoadOp = LoadOp.Clear
                                 StoreOp = StoreOp.Store
-                                ClearColor = { R = 0.5f; G = 0.5f; B = 0.5f; A = 1.0f }
+                                ClearColor = { R = 0.5; G = 0.5; B = 0.5; A = 1.0 }
                             }
                         |]
                     DepthStencilAttachment =

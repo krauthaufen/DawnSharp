@@ -24,7 +24,7 @@ module CreateProcess =
         let args =
             [
                 "\""
-                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat\""
+                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Preview\\VC\\Auxiliary\\Build\\vcvars64.bat\""
                 "&&"
                 String.concat " " (name :: args)
                 "\""
@@ -147,12 +147,12 @@ Target.create "LinkDawnWindows" (fun _ ->
                 Path.Combine(dawnDir, "cmake", "src", "utils", "Release", "dawn_utils.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn_native", "Release", "dawn_native.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn_platform", "Release", "dawn_platform.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "libshaderc_spvc", "Release", "shaderc_spvc.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-hlsl.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-msl.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-glsl.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-reflect.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-core.lib") |> lib
+                //Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "libshaderc_spvc", "Release", "shaderc_spvc.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-hlsl.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-msl.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-glsl.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-reflect.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-core.lib") |> lib
                 //Path.Combine(dawnDir, "cmake", "src", "dawn_wire", "Release", "dawn_wire.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "common", "Release", "dawn_common.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawncpp_headers.lib") |> lib
@@ -212,15 +212,15 @@ Target.create "LinkDawnWindows" (fun _ ->
                 sprintf "/IMPLIB:\"%s\"" (Path.ChangeExtension(dllOut, ".lib"))
                 "/MACHINE:X64"
                 "/DLL"
-                Path.Combine(__SOURCE_DIRECTORY__, "lib", "pch.obj")
-                Path.Combine(__SOURCE_DIRECTORY__, "lib", "dllmain.obj")
+                //Path.Combine(__SOURCE_DIRECTORY__, "lib", "pch.obj")
+                //Path.Combine(__SOURCE_DIRECTORY__, "lib", "dllmain.obj")
 
             ]
 
         let args =
             [
                 "\""
-                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat\""
+                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Preview\\VC\\Auxiliary\\Build\\vcvars64.bat\""
                 "&&"
                 String.concat " " ("link.exe" :: linkerArgs)
 
@@ -460,18 +460,18 @@ Target.create "DawnWindows" (fun _ ->
             }
         )
 
-        // build DawnNative
-        "src/DawnNative/DawnNative.vcxproj" |> MSBuild.build (fun (defaults:MSBuildParams) ->
-            { defaults with
-                Verbosity = Some(Quiet)
-                Targets = ["Build"]
-                Properties =
-                    [
-                        "Platform", "x64"
-                        "Configuration", "Release"
-                    ]
-            }
-        )
+    // build DawnNative
+    "src/DawnNative/DawnNative.vcxproj" |> MSBuild.build (fun (defaults:MSBuildParams) ->
+        { defaults with
+            Verbosity = Some(Quiet)
+            Targets = ["Build"]
+            Properties =
+                [
+                    "Platform", "x64"
+                    "Configuration", "Release"
+                ]
+        }
+    )
 
 
     // write def
@@ -501,12 +501,12 @@ Target.create "DawnWindows" (fun _ ->
                 Path.Combine(dawnDir, "cmake", "src", "utils", "Release", "dawn_utils.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn_native", "Release", "dawn_native.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn_platform", "Release", "dawn_platform.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "libshaderc_spvc", "Release", "shaderc_spvc.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-hlsl.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-msl.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-glsl.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-reflect.lib") |> lib
-                Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "third_party", "spirv-cross", "Release", "spirv-cross-core.lib") |> lib
+                //Path.Combine(dawnDir, "cmake", "third_party", "shaderc", "libshaderc_spvc", "Release", "shaderc_spvc.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-hlsl.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-msl.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-glsl.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-reflect.lib") |> lib
+                Path.Combine(dawnDir, "cmake", "third_party", "spirv-cross", "Release", "spirv-cross-core.lib") |> lib
                 //Path.Combine(dawnDir, "cmake", "src", "dawn_wire", "Release", "dawn_wire.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "common", "Release", "dawn_common.lib") |> lib
                 Path.Combine(dawnDir, "cmake", "src", "dawn", "Release", "dawncpp_headers.lib") |> lib
@@ -565,15 +565,15 @@ Target.create "DawnWindows" (fun _ ->
                 sprintf "/IMPLIB:\"%s\"" (Path.ChangeExtension(dllOut, ".lib"))
                 "/MACHINE:X64"
                 "/DLL"
-                Path.Combine(__SOURCE_DIRECTORY__, "lib", "pch.obj")
-                Path.Combine(__SOURCE_DIRECTORY__, "lib", "dllmain.obj")
+                //Path.Combine(__SOURCE_DIRECTORY__, "lib", "pch.obj")
+                //Path.Combine(__SOURCE_DIRECTORY__, "lib", "dllmain.obj")
 
             ]
 
         let args =
             [
                 "\""
-                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat\""
+                "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Preview\\VC\\Auxiliary\\Build\\vcvars64.bat\""
                 "&&"
                 String.concat " " ("link.exe" :: linkerArgs)
 

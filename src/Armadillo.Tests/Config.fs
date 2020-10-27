@@ -18,7 +18,7 @@ module ExpectoConfigs =
     let cfg = 
         { 
             FsCheckConfig.defaultConfig with 
-                maxTest = 1000
+                maxTest = 300
                 endSize = 300 
                 arbitrary = [ typeof<CustomProvider> ]
         }

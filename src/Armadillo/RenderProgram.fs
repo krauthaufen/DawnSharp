@@ -180,7 +180,7 @@ module private Native =
                 ass.Call wgpuRenderPassEncoderSetStencilReference
                 
             member x.SetBlendColor(color : C4f) =
-                let pColor = pinning.Pin [| { R = color.R; G = color.G; B = color.B; A = color.A } |]
+                let pColor = pinning.Pin [| { R = float color.R; G = float color.G; B = float color.B; A = float color.A } |]
                 ass.BeginCall(2)
                 ass.PushArg (NativePtr.toNativeInt pColor)
                 ass.PushPtrArg (NativePtr.toNativeInt encoder)
@@ -345,7 +345,7 @@ module private Managed =
                 store.Add <| fun e -> e.PushDebugGroup label
 
             member x.SetBlendColor (color : C4f) =
-                store.Add <| fun e -> e.SetBlendColor { R = color.R; G = color.G; B = color.B; A = color.A }
+                store.Add <| fun e -> e.SetBlendColor { R = float color.R; G = float color.G; B = float color.B; A = float color.A }
 
             member x.PopDebugGroup() =
                 store.Add <| fun e -> e.PopDebugGroup()

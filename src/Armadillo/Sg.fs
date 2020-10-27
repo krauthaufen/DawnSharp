@@ -1460,8 +1460,12 @@ module Sg =
     let memo<'a> (value : 'a) (creator : aval<'a> -> alist<Sg>) =
         MemoComponent<'a>.Constructor (value, Eq creator)
          
+    let memoList<'a> (value : list<'a>) (creator : alist<'a> -> alist<Sg>) =
+        MemoListComponent<_>.Constructor (value, Eq creator)
+        
     let alist<'a> (value : list<'a>) (creator : 'a -> Sg) =
-        MemoListComponent<'a>.Constructor (value, Eq (AList.map creator))
+        memoList value (AList.map creator)
+        //MemoListComponent<'a>.Constructor (value, Eq (AList.map creator))
         
     let list<'a> (value : list<'a>) (creator : 'a -> Sg) =
         List.map creator value |> group (SgAttributes.empty ())
@@ -1699,12 +1703,13 @@ module SgTest =
                 //    do! Shader.blubb
                 //}
                 Sg.effect [blubEff]
+
                 for tri in triangles do
                     Sg.bgroup {
                         if tri.P0.X > 0.9 then Sg.effect [blaEff]
                         //else Sg.effect [blubEff]
                         
-                        Sg.uniform "x" tri.P0
+                        Sg.uniform "a" C4b.Green
                         Sg.vertexData "Positions" (Data.Create [| V3f(tri.P0, 0.0); V3f(tri.P1, 0.0); V3f(tri.P2, 0.0) |])
 
                         Sg.draw {

@@ -586,6 +586,7 @@ module rec Ast =
                     | Entry.Native "uint64_t" -> Int(false, 64)
                     | Entry.Native "bool" -> Bool
                     | Entry.Native "float" -> Float 32
+                    | Entry.Native "double" -> Float 64
                     | Entry.Native "char" -> Int(false, 8)
                     | Entry.Native "size_t" -> NativeInt false
                     | Entry.Native "void" -> Unit
@@ -686,7 +687,7 @@ module rec Ast =
                     inner
                 ]
             
-        let rec pinField (access : string -> string) (field : Field) (inner : string) =
+        let rec pinField (device : string) (access : string -> string) (field : Field) (inner : string) =
             let name = field.name
             let typ = field.fieldType.Value
             match typ with
@@ -725,7 +726,7 @@ module rec Ast =
                 
             | ByRef (Struct (_, ext, fields) as element) ->
                 let nativeName = nativeName element
-                pinStruct nativeName (access name) (sprintf "%sValue" name) ext fields [
+                pinStruct device nativeName (access name) (sprintf "%sValue" name) ext fields [
                     sprintf "let _%s = NativePtr.stackalloc 1" name
                     sprintf "NativePtr.write _%s _%sValue" name name
                     inner
@@ -772,7 +773,7 @@ module rec Ast =
                     sprintf "        use _%s = fixed _%soutputs" name name
                     sprintf "%s" (indent (indent inner))
                     sprintf "    else"
-                    indent (indent (pinStruct nativeElement (sprintf "_%sinputs.[_%si]" name name) "n" ext fields [
+                    indent (indent (pinStruct device nativeElement (sprintf "_%sinputs.[_%si]" name name) "n" ext fields [
                         sprintf "_%soutputs.[_%si] <- _n" name name
                         sprintf "_%sCont _%sinputs _%soutputs (_%si + 1)" name name name name
                     ]))
@@ -812,7 +813,7 @@ module rec Ast =
                     sprintf "match %s with" (access name)
                     sprintf "| Some v ->"
                     indent (
-                        pinStruct nativeName "v" "n" ext fields [
+                        pinStruct device nativeName "v" "n" ext fields [
                             sprintf "let ptr = NativePtr.stackalloc 1"
                             sprintf "NativePtr.write ptr _n"
                             sprintf "_%sCont ptr" name
@@ -864,11 +865,18 @@ module rec Ast =
 
             | PersistentCallback(_, args) ->
                 let argDef = args |> List.map (fun a -> sprintf "(%s : %s)" a.name (nativeName a.fieldType.Value)) |> String.concat " "
-
+                
+                //let device = if name = "Device" then "x" else "x.Device"
                 let rec readArgs (a : list<Field>) =
                     match a with
                     | [] ->
-                        let all = args |> List.map (fun f -> sprintf "_%s" f.name) |> String.concat ", "
+                        let all = 
+                            args |> List.map (fun f -> 
+                                match f.fieldType.Value with
+                                | Object _ -> 
+                                    sprintf "new %s(%s, _%s)" (frontendName f.fieldType.Value) device f.name
+                                | _ -> sprintf "_%s" f.name
+                            ) |> String.concat ", "
                         sprintf "%s.Invoke(%s)" name all
                     | a0 :: rest ->
                         readValue id a0 (readArgs rest)
@@ -890,7 +898,13 @@ module rec Ast =
                 let rec readArgs (a : list<Field>) =
                     match a with
                     | [] ->
-                        let all = args |> List.map (fun f -> sprintf "_%s" f.name) |> String.concat ", "
+                        let all = 
+                            args |> List.map (fun f -> 
+                                match f.fieldType.Value with
+                                | Object _ -> 
+                                    sprintf "new %s(%s, _%s)" (frontendName f.fieldType.Value) device f.name
+                                | _ -> sprintf "_%s" f.name
+                            ) |> String.concat ", "
                         String.concat "\r\n"[
                             sprintf "if _%sGC.IsAllocated then _%sGC.Free()" name name
                             sprintf "%s.Invoke(%s)" name all
@@ -926,7 +940,7 @@ module rec Ast =
                     inner
                 ]
             | Struct(_, ext, fields)  ->
-                pinStruct (nativeName typ) (access name) name ext fields [
+                pinStruct device (nativeName typ) (access name) name ext fields [
                     inner
                 ]
                 //String.concat "\r\n" [
@@ -937,7 +951,7 @@ module rec Ast =
             | Unit ->
                 inner
 
-        and pinStruct (nativeName : string) (access : string) (varName : string) (ext : bool) (fields : list<Field>) (inner : list<string>) =
+        and pinStruct (device : string) (nativeName : string) (access : string) (varName : string) (ext : bool) (fields : list<Field>) (inner : list<string>) =
             let rec pinCode (f : list<Field>) =
                 match f with
                 | [] ->
@@ -954,7 +968,7 @@ module rec Ast =
                     ]
                 | f0 :: rest ->
                     let rest = pinCode rest
-                    pinField (sprintf "%s.%s" access) f0 rest
+                    pinField device (sprintf "%s.%s" access) f0 rest
                 
             pinCode fields
 
@@ -1176,7 +1190,7 @@ module rec Ast =
 
                 printfn ""
 
-                printfn "    member inline x.Pin<'a>(callback : %s -> 'a) : 'a = " (nativeName e)
+                printfn "    member inline x.Pin<'a>(device : Device, callback : %s -> 'a) : 'a = " (nativeName e)
                 printfn "        let x = x"
                 let rec pinCode (f : list<Field>) =
                     match f with
@@ -1193,7 +1207,7 @@ module rec Ast =
                         ]
                     | f0 :: rest ->
                         let rest = pinCode rest
-                        pinField (sprintf "x.%s") f0 rest
+                        pinField "device" (sprintf "x.%s") f0 rest
                 
                 let code = pinCode fields
                 printfn "%s" (indent (indent code))
@@ -1355,14 +1369,14 @@ module rec Ast =
                                         match f0.fieldType.Value with
                                         | Array _ ->
                                             let rest = pinCode (sprintf "_%s" f0.name :: sprintf "_%sCount" f0.name :: args) rest
-                                            pinField id f0 rest
+                                            pinField device id f0 rest
                                 
                                         | _ -> 
                                             let rest = pinCode (sprintf "_%s" f0.name :: args) rest
-                                            pinField id f0 rest
+                                            pinField device id f0 rest
                                     | Choice2Of2 ((name, value, typ)) ->
                                         let rest = pinCode (sprintf "_%s" name :: args) rest
-                                        pinField (fun _ -> value) { name = name; fieldType = lazy typ; defaultValue = None } rest
+                                        pinField device (fun _ -> value) { name = name; fieldType = lazy typ; defaultValue = None } rest
                 
                             let code = pinCode [] args
                             printfn "%s" (indent (indent code))
