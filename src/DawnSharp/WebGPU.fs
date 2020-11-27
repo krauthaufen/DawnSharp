@@ -5837,18 +5837,18 @@ type Device(handle : DeviceHandle, refCount : ref<int>) =
         let inline _LabelCont (_Label) = 
             let _Layout = (if isNull Descriptor.Layout then PipelineLayoutHandle.Null else Descriptor.Layout.Handle)
             let _Module = (if isNull Descriptor.VertexStage.Module then ShaderModuleHandle.Null else Descriptor.VertexStage.Module.Handle)
-            let _EntryPointCont (_EntryPoint) = 
+            let inline _EntryPointCont (_EntryPoint) = 
                 let mutable _VertexStage = Unchecked.defaultof<DawnRaw.WGPUProgrammableStageDescriptor>
                 _VertexStage.Next <- 0n
                 _VertexStage.Module <- _Module
                 _VertexStage.EntryPoint <- _EntryPoint
                 let _VertexStage = _VertexStage
-                let _FragmentStageCont _FragmentStage = 
-                    let _VertexStateCont _VertexState = 
+                let inline _FragmentStageCont _FragmentStage = 
+                    let inline _VertexStateCont _VertexState = 
                         let _PrimitiveTopology = Descriptor.PrimitiveTopology
-                        let _RasterizationStateCont _RasterizationState = 
+                        let inline _RasterizationStateCont _RasterizationState = 
                             let _SampleCount = Descriptor.SampleCount
-                            let _DepthStencilStateCont _DepthStencilState = 
+                            let inline _DepthStencilStateCont _DepthStencilState = 
                                 let _ColorStatesCount = if isNull Descriptor.ColorStates then 0 else Descriptor.ColorStates.Length
                                 let rec _ColorStatesCont (_ColorStatesinputs : array<ColorStateDescriptor>) (_ColorStatesoutputs : array<DawnRaw.WGPUColorStateDescriptor>) (_ColorStatesi : int) =
                                     if _ColorStatesi >= _ColorStatesCount then

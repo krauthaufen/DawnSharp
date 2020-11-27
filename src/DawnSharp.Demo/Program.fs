@@ -2906,13 +2906,14 @@ module SgTest =
         let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
 
         let instance = Instance()
+
         //instance.EnableBackendValidation true
         //instance.EnableGPUBasedBackendValidation true
         //instance.EnableBeginCaptureOnStartup true
 
         let adapters = instance.GetDefaultAdapters()
 
-        let idx = 1
+        let idx = 0
 
         Log.start "found %d adapters" adapters.Length
         for (idx, a) in Array.indexed adapters do
@@ -2922,12 +2923,20 @@ module SgTest =
         Log.stop()
 
         let a = adapters.[idx]
-        Log.line "using %s %s (%A)" a.Vendor a.Name a.BackendType
+        
         match a.BackendType with
         | BackendType.Null -> 
             printfn "%s" a.Name
         | _ -> 
-            let dev = a.CreateDevice()
+            Log.start "using %s %s (%A)" a.Vendor a.Name a.BackendType
+            for e in a.Extensions do
+                Log.line "%s" e
+            Log.stop()
+
+
+            let dev = a.CreateDevice(enabledToggles = [|"turn_off_vsync"; "skip_validation"|])
+
+            
 
             let binding = 
                 dev.CreateBackendBinding(a.BackendType, NativePtr.toNativeInt win)
@@ -2951,7 +2960,7 @@ module SgTest =
                             Usage = TextureUsage.OutputAttachment
                             Width = size.X
                             Height = size.Y
-                            PresentMode = PresentMode.Mailbox
+                            PresentMode = PresentMode.Immediate
                         }
                     )
 
