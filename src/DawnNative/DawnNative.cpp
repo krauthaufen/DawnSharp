@@ -30,7 +30,7 @@ extern "C" uint64_t dawnGetSwapChainImplementation(utils::BackendBinding * bindi
 
 extern "C" void dawnDestroyBackendBinding(utils::BackendBinding * ptr)
 {
-	if (!ptr)return;
+	if (!ptr) return;
 	delete ptr;
 }
 
@@ -187,6 +187,10 @@ extern "C" WGPUDevice dawnCreateDevice(dawn_native::Adapter * adapter, int extCo
 	}
 }
 
+
+extern "C" WGPUSurface dawnCreateSurface(dawn_native::Instance* instance, GLFWwindow* window) {
+	return utils::CreateSurfaceForWindow(wgpu::Instance(instance->Get()), window).Release();
+}
 
 // TODO: This is an example of a library function
 void fnDawnNative()

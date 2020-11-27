@@ -2207,11 +2207,700 @@ open FSharp.Data.Adaptive
 module SgTest = 
     open Armadillo
 
+    module Reflector =
+        open Microsoft.FSharp.Quotations
+        open Microsoft.FSharp.Quotations.Patterns
+        open Microsoft.FSharp.Quotations.DerivedPatterns
+        open Microsoft.FSharp.Quotations.ExprShape
+
+        let rec private tryGetMethod (e : Expr) =
+            match e with
+            | Call(_, mi, _) -> 
+                Some mi
+            | ShapeLambda(_, b) ->
+                tryGetMethod b
+            | ShapeCombination(_, args) ->
+                args |> List.tryPick tryGetMethod
+            | ShapeVar _ ->
+                None
+                
+        let rec private tryGetProperty (e : Expr) =
+            match e with
+            | PropertyGet(_, mi, _) -> 
+                Some mi
+            | ShapeLambda(_, b) ->
+                tryGetProperty b
+            | ShapeCombination(_, args) ->
+                args |> List.tryPick tryGetProperty
+            | ShapeVar _ ->
+                None
+
+        let method (e : Expr) =
+            match tryGetMethod e with
+            | Some m -> m
+            | None -> failwithf "no method: %A" e
+            
+        let property (e : Expr) =
+            match tryGetProperty e with
+            | Some m -> m
+            | None -> failwithf "no property: %A" e
+
+        let tryGetReflectedDefinition (e : Expr<'a>) =
+            match tryGetMethod e with
+            | Some mi ->
+                try Expr.TryGetReflectedDefinition mi
+                with _ -> None
+            | None ->
+                None
+
+
+        let private groupRun = method <@ Sg.bgroup.Run @> 
+        let private groupCombine = method <@ Sg.bgroup.Combine @> 
+        let private groupDelay = method <@ Sg.bgroup.Delay @> 
+        let private groupYieldSg = method <@ Sg.bgroup.Yield : Node<_> -> unit @> 
+        let private groupYieldUniform = method <@ Sg.bgroup.Yield : SgAttribute.Uniform -> unit @> 
+        let private groupYieldShader = method <@ Sg.bgroup.Yield : SgAttribute.Shader -> unit @> 
+        let private groupFor = (method <@ Sg.bgroup.For @>).GetGenericMethodDefinition()
+        let private groupYieldVertexAttr = method <@ Sg.bgroup.Yield : SgAttribute.VertexAttribute -> unit @> 
+
+        let private uniformMeth = (method <@ Sg.uniform @>).GetGenericMethodDefinition()
+        let private vertexDataMeth = method <@ Sg.vertexData @>
+        let private effectMeth = method <@ Sg.effect @>
+        let private drawProp = property <@ Sg.draw @>
+           
+
+        let rec (|NewList|_|) (e : Expr) =
+            if e.Type.IsGenericType && e.Type.GetGenericTypeDefinition() = typedefof<list<_>> then
+                match e with
+                | NewUnionCase(ci, []) when ci.Name = "Empty" -> Some []
+                | NewUnionCase(ci, [a; NewList b]) when ci.Name = "Cons" -> Some (a :: b)
+                | _ -> None
+            else
+                None
+        let (|Combine|_|) (e : Expr) =  
+            match e with
+            | Call(Some _, c, [l;Call(Some _, d, [Lambda(_, r)])]) when groupCombine = c && d = groupDelay ->
+                Some (l, r)
+            | _ ->
+                None
+            
+        type Expr with
+            static member Delay(e : Expr) =
+                let unitVar = Var("unitVar", typeof<unit>)
+                Expr.Call(Expr.Value Sg.bgroup, groupDelay, [Expr.Lambda(unitVar, e)])
+
+            static member Combine(l : Expr, r : Expr) =
+                let unitVar = Var("unitVar", typeof<unit>)
+                Expr.Call(Expr.Value Sg.bgroup, groupCombine, [l; Expr.Delay r])
+
+        
+        let (|InlineCall|_|) (e : Expr) =
+            match e with
+            | CallWithWitnesses(target, _, meth, witnesses, args) ->
+                match Expr.TryGetReflectedDefinition meth with
+                | Some (Lambdas(vs, body)) ->
+                    let vs, body = 
+                        match target with
+                        | Some t ->
+                            match vs with
+                            | [self]::rest -> 
+                                rest, Expr.Let(self, t, body)
+                            | _ ->
+                                failwith ""
+                        | None -> 
+                            vs, body
+
+                    let rec run (vars : list<Var>) (witnesses : list<Expr>) (args : list<Expr>) =
+                        match vars with 
+                        | v0 :: vars ->
+                            printfn "%s" v0.Name
+                            match witnesses with
+                            | w0 :: witnesses ->
+                                match run vars witnesses args with
+                                | Some res -> 
+                                    Expr.Let(v0, w0, res) |> Some
+                                | None ->
+                                    None
+                            | [] ->
+                                match args with
+                                | a0 :: args ->
+                                    match run vars witnesses args with
+                                    | Some res -> 
+                                        Expr.Let(v0, a0, res) |> Some
+                                    | None ->
+                                        None
+                                | [] ->
+                                    None
+
+                        | [] ->
+                            if List.isEmpty witnesses && List.isEmpty args then Some body
+                            else None
+
+
+                    run (List.concat vs) witnesses args
+
+
+                | _ ->
+                    None
+            | _ ->
+                None
+
+
+        let (|SimpleValue|_|) (e : Expr) =
+            match e with
+            | PropertyGet(None, p, []) -> 
+                try Expr.Value(p.GetValue(null),p.PropertyType) |> Some
+                with _ -> None
+            | FieldGet(None, f) ->
+                try Expr.Value(f.GetValue(null), f.FieldType) |> Some
+                with _ -> None
+            | Var v -> Some e
+            | Value v -> Some e
+            | _ -> None
+
+        let rec (|Reduce|_|) (e) =
+            match e with
+            | InlineCall e ->
+                Some e
+
+            | Application(Lambda(v0, b), SimpleValue e) ->
+                b.Substitute(fun v -> if v = v0 then Some e else None) |> Some
+
+            | PropertyGet(None, p, []) -> 
+                try Expr.Value(p.GetValue(null),p.PropertyType) |> Some
+                with _ -> None
+            | FieldGet(None, f) ->
+                try Expr.Value(f.GetValue(null), f.FieldType) |> Some
+                with _ -> None
+                
+            | Let(v, Reduce e, b) ->
+                match e with
+                | Value _ -> 
+                    let nb = b.Substitute(fun vv -> if vv = v then Some e else None) 
+                    match nb with
+                    | Reduce e -> Some e
+                    | _ -> Some nb
+                | _ ->
+                    Some (Expr.Let(v, e, b))
+
+            | _ ->
+                None
+
+        let (|Group|_|) (e : Expr) =
+            match e with
+            | Call(Some _, r, [Call(Some _, d, [Lambda(_, b)])]) when r = groupRun && d = groupDelay ->
+                Some b
+            | _ ->
+                None
+             
+
+        let (|YieldSg|_|) (e : Expr) =
+            match e with
+            | Call(Some _, y, [v]) when y = groupYieldSg ->
+                Some v
+            | _ ->
+                None
+                
+        let (|Draw|_|) (e : Expr) =
+            match e with
+            | Call(Some _, y, [Application(PropertyGet(None, draw, []), info)]) ->
+                if y = groupYieldSg && draw = drawProp then
+                    Some info
+                else 
+                    None
+
+            | _ ->
+                None
+
+        let rec (|CombCons|_|) (e : Expr) =
+            match e with
+            | Combine(a, b) ->
+                match a with
+                | CombCons(h, ra) ->
+                    Some (h, Expr.Combine(ra, b))
+                | a ->
+                    Some (a, b)
+            | _ ->
+                None
+
+        let (|YieldShader|_|) (e : Expr) =
+            match e with
+            | Call(Some _, y, [Call(None, e, [v])]) when y = groupYieldShader && e = effectMeth ->
+                Some v
+            | _ ->
+                None
+
+        let (|SetShader|_|) (e : Expr) =
+            match e with
+            | CombCons(YieldShader l, rest) ->
+                Some(l, rest)
+            | _ ->
+                None
+
+        let (|YieldUniform|_|) (e : Expr) =
+            match e with
+            | Call(Some _, y, [Call(None, uniform, [name; value])]) when y = groupYieldUniform && uniform.IsGenericMethod && uniform.GetGenericMethodDefinition() = uniformMeth ->
+                Some (name, value)
+            | _ ->
+                None
+                
+        let (|YieldVertexAttribute|_|) (e : Expr) =
+            match e with
+            | Call(Some _, y, [Call(None, attrMeth, [name; value])]) when y = groupYieldVertexAttr && attrMeth = vertexDataMeth ->
+                Some (name, value)
+            | _ ->
+                None
+
+            
+        let (|For|_|) (e : Expr) =
+            match e with
+            | Call(Some _, y, [elems; Lambda(v, body)]) when y.IsGenericMethod && y.GetGenericMethodDefinition() = groupFor ->
+                let v, body = 
+                    match body with
+                    | Let(v1, Var v0, body) when v0 = v -> v1, body //body.Substitute (fun vv -> if vv = v1 then Some (Expr.Var v) else None)
+                    | _ -> v, body
+
+                let elems =
+                    match elems with
+                    | Coerce(v, _) -> v
+                    | _ -> elems
+                
+                Some(v, elems, body)
+            | _ ->
+                None
+
+        module rec Ast = 
+            open System.Reflection
+            open Microsoft.FSharp.Reflection
+
+
+            type State<'s, 'a>() =
+                abstract member Run : byref<'s> -> 'a
+                abstract member RunUnit : byref<'s> -> unit
+
+                default x.Run(s) = x.RunUnit(&s); Unchecked.defaultof<'a>
+                default x.RunUnit(s) = x.Run(&s) |> ignore
+
+            module State =
+                
+                let inline value (value : 'a) =
+                    { new State<'s, 'a>() with
+                        member x.Run(_) = value
+                    }
+
+                let inline get<'s> =
+                    { new State<'s, 's>() with
+                        member x.Run(s) = s
+                    }
+                    
+                let inline put (state : 's) =
+                    { new State<'s, unit>() with
+                        member x.RunUnit(s) = s <- state
+                    }
+                        
+                let inline modify (mapping : 's -> 's) =
+                    { new State<'s, unit>() with
+                        member x.RunUnit(s) = s <- mapping s
+                    }
+                    
+                let inline custom (mapping : 's -> 's * 'a) =
+                    { new State<'s, 'a>() with
+                        member x.Run(s) = 
+                            let (ns, v) = mapping s
+                            s <- ns
+                            v
+                    }
+
+                let inline maps (mapping : 's -> 'a -> 'b) (state : State<'s, 'a>) =
+                    { new State<'s, 'b>() with
+                        member x.Run(s) =
+                            let a = state.Run(&s)
+                            mapping s a
+                    }
+
+                let inline map (mapping : 'a -> 'b) (state : State<'s, 'a>) =
+                    { new State<'s, 'b>() with
+                        member x.Run(s) =
+                            state.Run(&s) |> mapping
+                    }
+                    
+                let inline binds (mapping : 's -> 'a -> State<'s, 'b>) (state : State<'s, 'a>) =
+                    { new State<'s, 'b>() with
+                        member x.Run(s) =
+                            let a = state.Run(&s)
+                            (mapping s a).Run(&s)
+                    }
+
+                let inline bind (mapping : 'a -> State<'s, 'b>) (state : State<'s, 'a>) =
+                    { new State<'s, 'b>() with
+                        member x.Run(s) =
+                            let a = state.Run(&s)
+                            (mapping a).Run(&s)
+                    }
+
+                let inline ignore (state : State<'s, 'a>) =
+                    { new State<'s, unit>() with
+                        member x.RunUnit(s) = state.Run(&s) |> Operators.ignore
+                    }
+
+                let inline delay (action : unit -> State<'s, 'a>) =
+                    { new State<'s, 'a>() with
+                        member x.Run(s) = action().Run(&s)
+                    }
+
+                let inline combine (l : State<'s, unit>) (r : State<'s, 'a>) =
+                    { new State<'s, 'a>() with
+                        member x.Run(s) = l.RunUnit(&s); r.Run(&s)
+                    }
+
+                let inline tryWith (inner : State<'s, 'a>) (handler : exn -> State<'s, 'a>) =
+                    { new State<'s, 'a>() with
+                        member x.Run(s) =
+                            try 
+                                let mutable innerState = s
+                                let res = inner.Run(&innerState)
+                                s <- innerState
+                                res
+                            with e ->
+                                handler(e).Run(&s)
+                    }
+
+                let inline tryFinally (inner : State<'s, 'a>) (fin : State<'s, unit>) =
+                    { new State<'s, 'a>() with
+                        member x.Run(s) =
+                            try
+                                let mutable innerState = s
+                                let res = inner.Run(&innerState)
+                                s <- innerState
+                                res
+                            finally
+                                fin.RunUnit(&s)
+                    }
+
+                type StateBuilder() =
+                    member x.Return v = value v
+                    member x.ReturnFrom (v : State<_, _>) = v
+                    member x.Bind(m, mapping) = bind mapping m
+                    member x.Delay action = delay action
+                    member x.Run (s : State<_,_>) = s
+                    member x.Combine(l, r) = combine l r
+                    member x.TryWith(a, b) = tryWith a b
+                    member x.TryFinally(a,b) = tryFinally a b
+                    member x.Zero() = value()
+
+            let state = State.StateBuilder()
+
+            [<RequireQualifiedAccess>]
+            type SgExpr =
+                | Group of SgExpr
+                | Yield of SgExpr
+
+                | Draw of info : DrawExpr
+                | SetShader of Shader * SgExpr
+                | SetVertexAttribute of Attribute * SgExpr
+                | SetInstanceAttribute of Attribute * SgExpr
+                | SetUniform of Uniform * SgExpr
+
+                | AddressOf of SgExpr
+                | Application of lambda : SgExpr * argument : SgExpr
+                | Call of target : option<SgExpr> * method : MethodInfo * args : list<SgExpr>
+                | Coerce of SgExpr * Type
+                | DefaultValue of Type
+                | FieldGet of option<SgExpr> * FieldInfo
+                | FieldSet of option<SgExpr> * FieldInfo * SgExpr
+                | For of var : Var * elems : Expr * body : SgExpr
+                | IfThenElse of condition : Expr * ifTrue : SgExpr * ifFalse : SgExpr
+                | Lambdas of vars : list<list<Var>> * body : SgExpr
+                | Let of var : Var * expr : Expr * body : SgExpr
+                | NewArray of elementType : Type * length : SgExpr
+                | NewDelegate of delegateType : Type * vars : list<Var> * body : SgExpr
+                | NewObject of ctor : ConstructorInfo * args : list<SgExpr>
+                | NewRecord of record : Type * args : list<SgExpr>
+                | NewTuple of args : list<SgExpr>
+                | NewUnionCase of case : UnionCaseInfo * args : list<SgExpr>
+                | PropertyGet of target : option<SgExpr> * prop : PropertyInfo * indices : list<SgExpr>
+                | PropertySet of target : option<SgExpr> * prop : PropertyInfo * indices : list<SgExpr> * value : SgExpr
+                | QuoteRaw of SgExpr
+                | QuoteTyped of SgExpr
+                | Sequential of l : SgExpr * r : SgExpr
+                | TryFinally of SgExpr * SgExpr
+                | TryWith of SgExpr * Var * SgExpr * Var * SgExpr
+                | TupleGet of SgExpr * int
+                | TypeTest of SgExpr * Type
+                | UnionCaseTest of SgExpr * UnionCaseInfo
+                | Value of value : obj * typ : Type
+                | VarSet of Var * SgExpr
+                | Var of var : Var
+                | WhileLoop of guard : SgExpr * body : SgExpr
+
+            [<RequireQualifiedAccess>]
+            type Shader =
+                | General of Expr
+                | Constant of FShade.Effect
+
+
+
+
+            
+            module SgExpr =
+
+         
+
+
+                let rec getUsedShadersAux (current : Shader) (e : SgExpr) =
+                    match e with
+                    | SgExpr.Group e -> getUsedShadersAux current e
+                    | SgExpr.Yield e -> getUsedShadersAux current e
+
+                    | SgExpr.Draw _ -> HashSet.single current
+                    | SgExpr.SetShader(a, e) ->
+                        getUsedShadersAux a e
+
+                    | SgExpr.SetVertexAttribute(_, e) ->
+                        getUsedShadersAux current e
+
+                    | SgExpr.SetInstanceAttribute(_, e) ->
+                        getUsedShadersAux current e
+
+                    | SgExpr.SetUniform(_, e) ->
+                        getUsedShadersAux current e
+
+                    | SgExpr.IfThenElse(_, i, e) ->
+                        HashSet.union (getUsedShadersAux current i) (getUsedShadersAux current e)
+
+                    | SgExpr.For(v, elems, body) ->
+                        getUsedShadersAux current body
+                        
+                    | SgExpr.Var _ -> HashSet.empty
+
+                    | SgExpr.Value _ -> HashSet.empty
+
+                    | SgExpr.Let(v, e, b) ->
+                        getUsedShadersAux current b
+
+                    | SgExpr.Sequential (l, r) ->
+                        HashSet.union (getUsedShadersAux current l) (getUsedShadersAux current r)
+
+                    | SgExpr.Lambdas(_, b) ->
+                        getUsedShadersAux current b
+
+
+
+                
+            [<RequireQualifiedAccess>]
+            type Attribute =
+                | Named of name : string * value : Expr
+                | Single of name : Expr * value : Expr
+                
+            [<RequireQualifiedAccess>]
+            type Uniform =
+                | Named of name : string * value : Expr
+                | Single of name : Expr * value : Expr
+                
+            [<RequireQualifiedAccess>]
+            type DrawExpr =
+                | Constant of DrawInfo
+                | Dynamic of Expr
+
+            let rec ofExpr (e : Expr) =
+                match e with    
+                | Reduce e ->
+                    ofExpr e
+                | Value(v, t) ->
+                    SgExpr.Value(v, t)
+                | Group body ->
+                    SgExpr.Group(ofExpr body)
+                | SetShader(shader, rest) ->
+                    let value = 
+                        match shader with
+                        | NewList exprs ->
+                            try
+                                exprs 
+                                |> List.map (function (Reduce (Value(v,_))) -> unbox<FShade.Effect> v | _ -> failwith "")
+                                |> FShade.Effect.compose
+                                |> Shader.Constant
+                            with _ ->
+                                Shader.General shader
+                        | _ ->
+                                Shader.General shader
+                        
+                    SgExpr.SetShader(value, ofExpr rest)
+
+                | CombCons(YieldUniform(name, value), rest) ->
+                    let value = 
+                        match name with
+                        | Reduce (String name) -> Uniform.Named(name, value)
+                        | _ -> Uniform.Single(name, value)
+                    SgExpr.SetUniform(value, ofExpr rest)
+                    
+                | CombCons(YieldVertexAttribute(name, value), rest) ->
+                    let value = 
+                        match name with
+                        | Reduce (String name) -> Attribute.Named(name, value)
+                        | _ -> Attribute.Single(name, value)
+                    SgExpr.SetVertexAttribute(value, ofExpr rest)
+                    
+                | Draw info ->
+                    let value =
+                        match info with
+                        | Reduce (Value(v,_)) -> DrawExpr.Constant (unbox v)
+                        | _ -> DrawExpr.Dynamic info
+                    SgExpr.Draw value
+                    
+                | YieldSg sg ->
+                    SgExpr.Yield (ofExpr sg)
+
+                | For(v, elems, body) ->
+                    let body = ofExpr body
+                    SgExpr.For(v, elems, body)
+
+                | Lambdas(vs, b) -> 
+                    let b = ofExpr b
+                    SgExpr.Lambdas(vs, b)
+                | Var v ->
+                    SgExpr.Var v
+
+                | Let(v, e, b) ->
+                    let b = ofExpr b
+                    SgExpr.Let(v, e, b)
+                    
+                | Combine(l, r) | Sequential(l, r) ->
+                    SgExpr.Sequential(ofExpr l, ofExpr r)
+
+                | e ->
+                    failwithf "bad expr: %A" e
+
+            let lineBreak = System.Text.RegularExpressions.Regex @"[ \t]*[\r\n]+[ \t]*"
+
+            let print (e : SgExpr) =
+                let expr (e : Expr) =
+                    let str = sprintf "%0A" e
+                    let str = lineBreak.Replace(str, " ")
+                    if str.Length > 60 then str.Substring(0, 57) + "..."
+                    else str
+                    
+                match e with
+                | SgExpr.Group sg ->
+                    Log.start "group"
+                    print sg
+                    Log.stop()
+
+                | SgExpr.SetShader(shader, sg) ->
+
+                    let used = SgExpr.getUsedShadersAux shader sg |> HashSet.remove shader
+                    Log.warn "used: %A" used
+
+                    let name = 
+                        match shader with
+                        | Shader.Constant e -> sprintf "%s" e.Id
+                        | Shader.General e -> expr e
+                    Log.start "shader %s" name
+                    print sg
+                    Log.stop()
+                    
+                | SgExpr.Draw info ->
+                    match info with
+                    | DrawExpr.Constant info ->
+                        Log.line "draw %0A" info
+
+                    | DrawExpr.Dynamic info -> 
+                        Log.line "draw %s" (expr info)
+                    
+                | SgExpr.SetInstanceAttribute(value, sg) ->
+                    let value = 
+                        match value with
+                        | Attribute.Named(name, value) -> sprintf "%s: %s" name (expr value)
+                        | Attribute.Single(name, value) -> sprintf "%s: %s" (expr name) (expr value)
+                    Log.start "instanceAttribute %s" value
+                    print sg
+                    Log.stop()
+                    
+                | SgExpr.SetVertexAttribute(value, sg) ->
+                    let value = 
+                        match value with
+                        | Attribute.Named(name, value) -> sprintf "%s: %s" name (expr value)
+                        | Attribute.Single(name, value) -> sprintf "%s: %s" (expr name) (expr value)
+                    Log.start "vertexAttribute %s" value
+                    print sg
+                    Log.stop()
+                    
+                | SgExpr.SetUniform(value, sg) ->
+                    let value = 
+                        match value with
+                        | Uniform.Named(name, value) -> sprintf "%s: %s" name (expr value)
+                        | Uniform.Single(name, value) -> sprintf "%s: %s" (expr name) (expr value)
+                    Log.start "uniform %s" value
+                    print sg
+                    Log.stop()
+
+                | SgExpr.Value(v, _) ->
+                    Log.line "value %0A" v
+
+                | SgExpr.Yield sg ->
+                    Log.start "yield"
+                    print sg
+                    Log.stop()
+
+                | SgExpr.Var v ->
+                    Log.line "%s" v.Name
+
+                | SgExpr.Sequential(l, r) ->
+                    print l
+                    print r
+
+                
+                | SgExpr.For(v, e, b) ->
+                    Log.start "for %s in %s do" v.Name (expr e)
+                    print b
+                    Log.stop()
+
+                | SgExpr.IfThenElse(c, i, e) ->
+                    Log.start "if %s then" (expr c)
+                    print i
+                    Log.stop()
+                    Log.start "else"
+                    print e
+                    Log.stop()
+                | SgExpr.Lambdas(vs, b) ->
+                    let args = vs |> List.map (List.map (fun v -> v.Name) >> String.concat "," >> sprintf "(%s)") |> String.concat " "
+                    Log.start "lambda %s" args
+                    print b
+                    Log.stop()
+                | SgExpr.Let(v, e, b) ->
+                    Log.start "let %s = %s" v.Name (expr e)
+                    print b
+                    Log.stop()
+
+
+
+
     let run() =
         Aardvark.Init()
  
+   
+        //let m = Reflector.tryGetReflectedDefinition <@ SgTest.bla @>
+        
+
+
+        //match m with
+        //| Some b ->
+        //    SgExpr.ofExpr b
+        //    |> SgExpr.evaluateConstants
+        //    |> SgExpr.toString
+        //    |> printfn "%s"
+        //    //Reflector.Ast.ofExpr b |>  Reflector.Ast.print
+        //| None ->
+        //    ()
+
+        //exit 0
+
+
         let glfw = Glfw.GetApi()
         glfw.Init() |> ignore
+
+        glfw.SetErrorCallback(GlfwCallbacks.ErrorCallback(fun code err -> Log.error "%A: %s" code err)) |> ignore
+
+        glfw.DefaultWindowHints()
         glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi)
         //glfw.WindowHint(WindowHintBool.Visible, false)
         let win = glfw.CreateWindow(640, 480, "Yeah", NativePtr.ofNativeInt 0n, NativePtr.ofNativeInt 0n)
@@ -2223,15 +2912,17 @@ module SgTest =
 
         let adapters = instance.GetDefaultAdapters()
 
-        let idx = 0
+        let idx = 1
 
-        //for (idx, a) in Array.indexed adapters do
-        //    printfn "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
+        Log.start "found %d adapters" adapters.Length
+        for (idx, a) in Array.indexed adapters do
+            Log.line "%d: %s %s (%A)" idx a.Vendor a.Name a.BackendType
         //printf "select device: "
         //let idx = System.Console.ReadLine() |> int
+        Log.stop()
 
         let a = adapters.[idx]
-        printfn "using %s %s (%A)" a.Vendor a.Name a.BackendType
+        Log.line "using %s %s (%A)" a.Vendor a.Name a.BackendType
         match a.BackendType with
         | BackendType.Null -> 
             printfn "%s" a.Name
@@ -2264,6 +2955,7 @@ module SgTest =
                         }
                     )
 
+                dev.Tick()
                 chain.Configure(swapChainFormat, TextureUsage.OutputAttachment, size.X, size.Y)
                 chain
             
@@ -2499,7 +3191,8 @@ let rec listHash (a : int) (l : list<'a>) =
 
 [<EntryPoint; STAThread>]
 let main argv = 
-
+    //Hans.Disassembler.run()
+    //exit 0
     ////FSharp.Data.Adaptive.DefaultEqualityComparer.SetProvider {
     ////    new IEqualityProvider with
     ////        member x.GetEqualityComparer<'a>() =   

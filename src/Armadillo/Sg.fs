@@ -1828,14 +1828,63 @@ module SgTest =
 
     let triData = Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |]
 
+    
+    [<ReflectedDefinition>]
+    let bla (color : C4b) (triangles : list<Triangle2d>) =
+        for a in 0 .. 10 .. 100 do
+            System.Console.WriteLine("asd")
+        Sg.bgroup {
+            Sg.uniform "a" color
+            Sg.effect [blaEff]
 
+            Sg.bgroup { 
+                //Sg.vertexData "Positions" (Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
+                
+                //Sg.vertexData "Positions" (Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
+                Sg.vertexData "Positions" triData //(Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
+                
+                for tri in triangles do
+                    Sg.bgroup {
 
+                        let a =
+                            if tri.P0.X > 0.0 then [blubEff]
+                            else [blaEff]
+
+                        //if tri.P0.X > 0.9 then Sg.effect [blaEff]
+                        //else Sg.effect [blubEff]
+                        
+                        let u = V3d(tri.Edge01, 0.0)
+                        let v = V3d(tri.Edge02, 0.0)
+                        let n = u.Cross v
+                        let m = M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0))
+                        Sg.uniform "trafo1" m.R0
+                        Sg.uniform "trafo2" m.R1
+                        Sg.uniform "trafo3" m.R2
+                        Sg.uniform "trafo4" m.R3
+                        //Sg.uniform "trafo" (M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0)))
+                        Sg.effect a
+                        Sg.draw {
+                            indexed = false
+                            mode = PrimitiveTopology.TriangleList
+                            instanceCount = 1
+                            count = 3
+                            first = 0
+                            firstInstance = 0
+                            baseVertex = 0
+                        }
+                    }
+            }
+        }
+
+    [<ReflectedDefinition>]
     let testSg (color : C4b) (cnt : aval<DrawInfo>) (showQuad : bool) (triangles : list<Triangle2d>) (pos : Data) =
         Sg.bgroup {
             Sg.uniform "a" color
 
             Sg.effect [blaEff]
             Sg.vertexData "Positions" pos
+
+
 
             Sg.bgroup { 
                 //Sg.vertexData "Positions" (Data.Create [| V3f(0.0, 0.0, 0.0); V3f(1.0, 0.0, 0.0); V3f(0.0, 1.0, 0.0) |])
@@ -1863,7 +1912,7 @@ module SgTest =
                             arr |> Array.map (fun tri ->
                                 let u = V3d(tri.Edge01, 0.0)
                                 let v = V3d(tri.Edge02, 0.0)
-                                let n = Vec.cross u v
+                                let n = u.Cross v
 
                                 M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0))
                                 |> M44f.op_Explicit
@@ -1891,8 +1940,7 @@ module SgTest =
                         
                             let u = V3d(tri.Edge01, 0.0)
                             let v = V3d(tri.Edge02, 0.0)
-                            let n = Vec.cross u v
-
+                            let n = u.Cross v
                             let m = M44d.FromCols(V4d(u, 0.0), V4d(v, 0.0), V4d(n, 0.0), V4d(tri.P0, 0.0, 1.0))
                             Sg.uniform "trafo1" m.R0
                             Sg.uniform "trafo2" m.R1
